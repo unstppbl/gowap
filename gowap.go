@@ -153,7 +153,6 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 
 	wapp.Collector.OnHTML("script", func(e *colly.HTMLElement) {
 		scraped.scripts = append(scraped.scripts, e.Attr("src"))
-		fmt.Println(e.Attr("src"))
 	})
 
 	err = wapp.Collector.Visit(url)
@@ -163,23 +162,23 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 	}
 
 	for _, app := range wapp.Apps {
-		// var patterns map[string][]*pattern
 		analyzeURL(app, url)
-		// if app.HTML != nil {
-		// 	patterns := parsePatterns(app.HTML)
-		// }
-		// if app.Headers != nil {
-		// 	patterns := parsePatterns(app.Headers)
-		// }
-		// if app.Cookies != nil {
-		// 	patterns := parsePatterns(app.Cookies)
-		// }
+		if app.HTML != nil {
+			analyzeHTML(app, scraped.html)
+		}
+		if app.Headers != nil {
+			analyzeHeaders(app, scraped.headers)
+		}
+		if app.Cookies != nil {
+			analyzeCookies(app, scraped.cookies)
+		}
 		if app.Scripts != nil {
 			analyzeScripts(app, scraped.scripts)
 		}
 		if app.Detected {
-			fmt.Println(app.Name)
+			fmt.Printf("DETECTED APP: %s, VERSION: %s\n", app.Name, app.Version)
 		}
+
 	}
 	return scraped, nil
 }
@@ -191,7 +190,6 @@ func analyzeURL(app *application, url string) {
 			if pattrn.regex != nil && pattrn.regex.Match([]byte(url)) {
 				app.Detected = true
 				detectVersion(app, pattrn, &url)
-				fmt.Println("MATCHED!!!")
 			}
 		}
 	}
@@ -213,15 +211,75 @@ func analyzeScripts(app *application, scripts []string) {
 	}
 }
 
+func analyzeHeaders(app *application, headers map[string][]string) {
+	patterns := parsePatterns(app.Headers)
+	for headerName, v := range patterns {
+		headerNameLowerCase := strings.ToLower(headerName)
+		for _, pattrn := range v {
+			if headersSlice, ok := headers[headerNameLowerCase]; ok {
+				for _, header := range headersSlice {
+					if pattrn.regex.Match([]byte(header)) {
+						app.Detected = true
+						detectVersion(app, pattrn, &header)
+					}
+				}
+			}
+		}
+	}
+}
+
+func analyzeCookies(app *application, cookies map[string]string) {
+	patterns := parsePatterns(app.Cookies)
+	for cookieName, v := range patterns {
+		cookieNameLowerCase := strings.ToLower(cookieName)
+		for _, pattrn := range v {
+			if cookie, ok := cookies[cookieNameLowerCase]; ok {
+				app.Detected = true
+				if pattrn.regex != nil && pattrn.regex.MatchString(cookie) {
+					detectVersion(app, pattrn, &cookie)
+				}
+			}
+		}
+	}
+}
+
+func analyzeHTML(app *application, html string) {
+	patterns := parsePatterns(app.HTML)
+	for _, v := range patterns {
+		for _, pattrn := range v {
+			if pattrn.regex != nil {
+				if pattrn.regex.Match([]byte(html)) {
+					app.Detected = true
+					detectVersion(app, pattrn, &html)
+				}
+			}
+		}
+	}
+}
+
 func detectVersion(app *application, pattrn *pattern, value *string) {
-	if pattrn.version != "" {
-		var versions []string
-		version := pattrn.version
-		if matches := pattrn.regex.FindAllString(*value, -1); matches != nil {
-			for i, match := range matches {
+	versions := make(map[string]interface{})
+	version := pattrn.version
+	if slices := pattrn.regex.FindAllStringSubmatch(*value, -1); slices != nil {
+		for _, slice := range slices {
+			for i, match := range slice {
 				reg, _ := regexp.Compile(fmt.Sprintf("%s%d%s", "\\\\", i, "\\?([^:]+):(.*)$"))
-				// ternary :=
-				fmt.Println(versions, version, i, match) // just to avoid warnings
+				ternary := reg.FindAll([]byte(version), -1)
+				if ternary != nil && len(ternary) == 3 {
+					version = strings.Replace(version, string(ternary[0]), string(ternary[1]), -1)
+				}
+				reg2, _ := regexp.Compile(fmt.Sprintf("%s%d", "\\\\", i))
+				version = reg2.ReplaceAllString(version, match)
+			}
+		}
+		if _, ok := versions[version]; ok != true && version != "" {
+			versions[version] = struct{}{}
+		}
+		if len(versions) != 0 {
+			for ver := range versions {
+				if ver > app.Version {
+					app.Version = ver
+				}
 			}
 		}
 	}
