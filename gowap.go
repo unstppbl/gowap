@@ -165,7 +165,6 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 	for _, app := range wapp.Apps {
 		// var patterns map[string][]*pattern
 		analyzeURL(app, url)
-
 		// if app.HTML != nil {
 		// 	patterns := parsePatterns(app.HTML)
 		// }
@@ -175,9 +174,9 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 		// if app.Cookies != nil {
 		// 	patterns := parsePatterns(app.Cookies)
 		// }
-		// if app.Scripts != nil {
-		// 	patterns := parsePatterns(app.Scripts)
-		// }
+		if app.Scripts != nil {
+			analyzeScripts(app, scraped.scripts)
+		}
 		if app.Detected {
 			fmt.Println(app.Name)
 		}
@@ -191,7 +190,38 @@ func analyzeURL(app *application, url string) {
 		for _, pattrn := range v {
 			if pattrn.regex != nil && pattrn.regex.Match([]byte(url)) {
 				app.Detected = true
+				detectVersion(app, pattrn, &url)
 				fmt.Println("MATCHED!!!")
+			}
+		}
+	}
+}
+
+func analyzeScripts(app *application, scripts []string) {
+	patterns := parsePatterns(app.Scripts)
+	for _, v := range patterns {
+		for _, pattrn := range v {
+			if pattrn.regex != nil {
+				for _, script := range scripts {
+					if pattrn.regex.Match([]byte(script)) {
+						app.Detected = true
+						detectVersion(app, pattrn, &script)
+					}
+				}
+			}
+		}
+	}
+}
+
+func detectVersion(app *application, pattrn *pattern, value *string) {
+	if pattrn.version != "" {
+		var versions []string
+		version := pattrn.version
+		if matches := pattrn.regex.FindAllString(*value, -1); matches != nil {
+			for i, match := range matches {
+				reg, _ := regexp.Compile(fmt.Sprintf("%s%d%s", "\\\\", i, "\\?([^:]+):(.*)$"))
+				// ternary :=
+				fmt.Println(versions, version, i, match) // just to avoid warnings
 			}
 		}
 	}
