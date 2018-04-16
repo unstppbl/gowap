@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"regexp"
+	"strconv"
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
@@ -12,16 +13,6 @@ import (
 	"github.com/gocolly/colly"
 	"github.com/gocolly/colly/extensions"
 )
-
-// CustomError type to have more information about error
-type wappalyzerError struct {
-	Code int    `json:"code"`
-	Msg  string `json:"msg"`
-}
-
-func (e *wappalyzerError) Error() string {
-	return fmt.Sprintf("Error code: %d, msg: %s", e.Code, e.Msg)
-}
 
 type collyData struct {
 	html    string
@@ -35,7 +26,10 @@ type temp struct {
 	Categories map[string]*json.RawMessage `json:"categories"`
 }
 type application struct {
-	Name     string
+	Name       string   `json:"name,ompitempty"`
+	Version    string   `json:"version"`
+	Categories []string `json:"categories,omitempty"`
+
 	Cats     []int                  `json:"cats,omitempty"`
 	Cookies  interface{}            `json:"cookies,omitempty"`
 	Js       interface{}            `json:"js,omitempty"`
@@ -47,21 +41,18 @@ type application struct {
 	Scripts  interface{}            `json:"script,omitempty"`
 	URL      string                 `json:"url,omitempty"`
 	Website  string                 `json:"website,omitempty"`
-	Detected bool
-	Version  string
 }
 
 type category struct {
-	ReferenceNumber string
-	Name            string `json:"name,omitempty"`
-	Priority        int    `json:"priority,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Priority int    `json:"priority,omitempty"`
 }
 
 // Wappalyzer implements analyze method as original wappalyzer does
 type Wappalyzer struct {
 	Collector       *colly.Collector
 	Apps            map[string]*application
-	Categories      []*category
+	Categories      map[string]*category
 	RandomUserAgent bool
 	MaxDepth        int
 }
@@ -69,49 +60,58 @@ type Wappalyzer struct {
 // Init initializes wappalyzer
 func Init(signaturesFilePath string, randomUserAgent bool, MaxDepth int) (wapp *Wappalyzer, err error) {
 	wapp = &Wappalyzer{}
-	wapp.Collector = colly.NewCollector(
-		colly.IgnoreRobotsTxt(),
-		colly.MaxDepth(MaxDepth),
-		// colly.Debugger(&debug.LogDebugger{}),
-	)
-	extensions.Referrer(wapp.Collector)
-	if randomUserAgent {
-		extensions.RandomUserAgent(wapp.Collector)
-	}
 
 	appsFile, err := ioutil.ReadFile(signaturesFilePath)
 	if err != nil {
-		fmt.Printf("[!] Couldn't open file at %s\n", signaturesFilePath)
+		log.Errorf("Couldn't open file at %s\n", signaturesFilePath)
 		return nil, err
 	}
 	temporary := &temp{}
 	err = json.Unmarshal(appsFile, &temporary)
 	if err != nil {
-		fmt.Printf("[!] Couldn't unmarshal apps.json file: %s\n", err)
+		log.Errorf("Couldn't unmarshal apps.json file: %s\n", err)
+		return nil, err
 	}
 	wapp.Apps = make(map[string]*application)
+	wapp.Categories = make(map[string]*category)
+	for k, v := range temporary.Categories {
+		catg := &category{}
+		if err = json.Unmarshal(*v, catg); err != nil {
+			log.Errorf("[!] Couldn't unmarshal Categories: %s\n", err)
+			return nil, err
+		}
+		wapp.Categories[k] = catg
+	}
 	for k, v := range temporary.Apps {
 		app := &application{}
 		app.Name = k
 		if err = json.Unmarshal(*v, app); err != nil {
+			log.Errorf("Couldn't unmarshal Apps: %s\n", err)
 			return nil, err
 		}
+		parseCategories(app, &wapp.Categories)
 		wapp.Apps[k] = app
-	}
-	for k, v := range temporary.Categories {
-		catg := &category{}
-		catg.ReferenceNumber = k
-		if err = json.Unmarshal(*v, catg); err != nil {
-			return nil, err
-		}
-		wapp.Categories = append(wapp.Categories, catg)
 	}
 	return wapp, nil
 }
 
+type resultApp struct {
+	Name       string   `json:"name,ompitempty"`
+	Version    string   `json:"version"`
+	Categories []string `json:"categories,omitempty"`
+	excludes   interface{}
+	implies    interface{}
+}
+
 // Analyze retrieves application stack used on the provided web-site
-func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
-	// var detectedApplications map[string]*application
+func (wapp *Wappalyzer) Analyze(url string) (result string, err error) {
+	wapp.Collector = colly.NewCollector(
+		colly.IgnoreRobotsTxt(),
+	)
+	extensions.Referrer(wapp.Collector)
+	extensions.RandomUserAgent(wapp.Collector)
+
+	detectedApplications := make(map[string]*resultApp)
 	scraped := &collyData{}
 
 	wapp.Collector.OnRequest(func(r *colly.Request) {
@@ -125,10 +125,6 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 	wapp.Collector.OnResponse(func(r *colly.Response) {
 		log.Infof("Visited %s", r.Request.URL)
 		log.Infof("Status code: %d", r.StatusCode)
-		if r.StatusCode != 200 {
-			err = fmt.Errorf("status code is %d", r.StatusCode)
-			return
-		}
 
 		scraped.headers = make(map[string][]string)
 		for k, v := range *r.Headers {
@@ -157,53 +153,72 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 
 	err = wapp.Collector.Visit(url)
 	if err != nil {
-		fmt.Println(err)
-		return nil, err
+		return "", err
 	}
 
 	for _, app := range wapp.Apps {
-		analyzeURL(app, url)
+		analyzeURL(app, url, &detectedApplications)
 		if app.HTML != nil {
-			analyzeHTML(app, scraped.html)
+			analyzeHTML(app, scraped.html, &detectedApplications)
 		}
 		if app.Headers != nil {
-			analyzeHeaders(app, scraped.headers)
+			analyzeHeaders(app, scraped.headers, &detectedApplications)
 		}
 		if app.Cookies != nil {
-			analyzeCookies(app, scraped.cookies)
+			analyzeCookies(app, scraped.cookies, &detectedApplications)
 		}
 		if app.Scripts != nil {
-			analyzeScripts(app, scraped.scripts)
+			analyzeScripts(app, scraped.scripts, &detectedApplications)
 		}
-		if app.Detected {
-			fmt.Printf("DETECTED APP: %s, VERSION: %s\n", app.Name, app.Version)
-		}
-
 	}
-	return scraped, nil
+	for _, app := range detectedApplications {
+		if app.excludes != nil {
+			resolveExcludes(&detectedApplications, app.excludes)
+		}
+		if app.implies != nil {
+			resolveImplies(&wapp.Apps, &detectedApplications, app.implies)
+		}
+	}
+	var appsArray []*resultApp
+	for _, app := range detectedApplications {
+		log.Printf("[%-25s] DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)
+		appsArray = append(appsArray, app)
+	}
+	resultByte, err := json.Marshal(appsArray)
+	if err != nil {
+		log.Errorf("Couldn't marshal result: %s\n", err)
+		return "", err
+	}
+	return string(resultByte), nil
 }
 
-func analyzeURL(app *application, url string) {
+func analyzeURL(app *application, url string, detectedApplications *map[string]*resultApp) {
 	patterns := parsePatterns(app.URL)
 	for _, v := range patterns {
 		for _, pattrn := range v {
 			if pattrn.regex != nil && pattrn.regex.Match([]byte(url)) {
-				app.Detected = true
-				detectVersion(app, pattrn, &url)
+				if _, ok := (*detectedApplications)[app.Name]; !ok {
+					resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
+					(*detectedApplications)[resApp.Name] = resApp
+					detectVersion(resApp, pattrn, &url)
+				}
 			}
 		}
 	}
 }
 
-func analyzeScripts(app *application, scripts []string) {
+func analyzeScripts(app *application, scripts []string, detectedApplications *map[string]*resultApp) {
 	patterns := parsePatterns(app.Scripts)
 	for _, v := range patterns {
 		for _, pattrn := range v {
 			if pattrn.regex != nil {
 				for _, script := range scripts {
 					if pattrn.regex.Match([]byte(script)) {
-						app.Detected = true
-						detectVersion(app, pattrn, &script)
+						if _, ok := (*detectedApplications)[app.Name]; !ok {
+							resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
+							(*detectedApplications)[resApp.Name] = resApp
+							detectVersion(resApp, pattrn, &script)
+						}
 					}
 				}
 			}
@@ -211,16 +226,19 @@ func analyzeScripts(app *application, scripts []string) {
 	}
 }
 
-func analyzeHeaders(app *application, headers map[string][]string) {
+func analyzeHeaders(app *application, headers map[string][]string, detectedApplications *map[string]*resultApp) {
 	patterns := parsePatterns(app.Headers)
 	for headerName, v := range patterns {
 		headerNameLowerCase := strings.ToLower(headerName)
 		for _, pattrn := range v {
 			if headersSlice, ok := headers[headerNameLowerCase]; ok {
 				for _, header := range headersSlice {
-					if pattrn.regex.Match([]byte(header)) {
-						app.Detected = true
-						detectVersion(app, pattrn, &header)
+					if pattrn.regex != nil && pattrn.regex.Match([]byte(header)) {
+						if _, ok := (*detectedApplications)[app.Name]; !ok {
+							resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
+							(*detectedApplications)[resApp.Name] = resApp
+							detectVersion(resApp, pattrn, &header)
+						}
 					}
 				}
 			}
@@ -228,36 +246,39 @@ func analyzeHeaders(app *application, headers map[string][]string) {
 	}
 }
 
-func analyzeCookies(app *application, cookies map[string]string) {
+func analyzeCookies(app *application, cookies map[string]string, detectedApplications *map[string]*resultApp) {
 	patterns := parsePatterns(app.Cookies)
 	for cookieName, v := range patterns {
 		cookieNameLowerCase := strings.ToLower(cookieName)
 		for _, pattrn := range v {
-			if cookie, ok := cookies[cookieNameLowerCase]; ok {
-				app.Detected = true
-				if pattrn.regex != nil && pattrn.regex.MatchString(cookie) {
-					detectVersion(app, pattrn, &cookie)
+			if cookie, ok := cookies[cookieNameLowerCase]; ok && pattrn.regex != nil && pattrn.regex.MatchString(cookie) {
+				if _, ok := (*detectedApplications)[app.Name]; !ok {
+					resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
+					(*detectedApplications)[resApp.Name] = resApp
+					detectVersion(resApp, pattrn, &cookie)
 				}
 			}
 		}
 	}
 }
 
-func analyzeHTML(app *application, html string) {
+func analyzeHTML(app *application, html string, detectedApplications *map[string]*resultApp) {
 	patterns := parsePatterns(app.HTML)
 	for _, v := range patterns {
 		for _, pattrn := range v {
-			if pattrn.regex != nil {
-				if pattrn.regex.Match([]byte(html)) {
-					app.Detected = true
-					detectVersion(app, pattrn, &html)
+			if pattrn.regex != nil && pattrn.regex.Match([]byte(html)) {
+				if _, ok := (*detectedApplications)[app.Name]; !ok {
+					resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
+					(*detectedApplications)[resApp.Name] = resApp
+					detectVersion(resApp, pattrn, &html)
 				}
 			}
 		}
+
 	}
 }
 
-func detectVersion(app *application, pattrn *pattern, value *string) {
+func detectVersion(app *resultApp, pattrn *pattern, value *string) {
 	versions := make(map[string]interface{})
 	version := pattrn.version
 	if slices := pattrn.regex.FindAllStringSubmatch(*value, -1); slices != nil {
@@ -308,7 +329,7 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 		}
 		parsed["main"] = slice
 	default:
-		fmt.Printf("[!] Unkown type in parsePatterns: %T\n", ptrn)
+		log.Errorf("Unkown type in parsePatterns: %T\n", ptrn)
 	}
 	result = make(map[string][]*pattern)
 	for k, v := range parsed {
@@ -342,14 +363,37 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 	return result
 }
 
-type detectedApp struct {
-	Name       string   `json:"name,omitempty"`
-	Confidence string   `json:"confidence,omitempty"`
-	Version    string   `json:"version,omitempty"`
-	Website    string   `json:"website,omitempty"`
-	Categories []string `json:"categories,omitempty"`
+func parseImpliesExcludes(value interface{}) (array []string) {
+	switch item := value.(type) {
+	case string:
+		array = append(array, item)
+	case []string:
+		return item
+	}
+	return array
 }
-type result struct {
-	Urls         []string       `json:"urls,omitempty"`
-	Applications []*detectedApp `json:"applications,omitempty"`
+
+func resolveExcludes(detected *map[string]*resultApp, value interface{}) {
+	excludedApps := parseImpliesExcludes(value)
+	for _, excluded := range excludedApps {
+		delete(*detected, excluded)
+	}
+}
+
+func resolveImplies(apps *map[string]*application, detected *map[string]*resultApp, value interface{}) {
+	impliedApps := parseImpliesExcludes(value)
+	for _, implied := range impliedApps {
+		app := (*apps)[implied]
+		resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
+		(*detected)[implied] = resApp
+		if app.Implies != nil {
+			resolveImplies(apps, detected, app.Implies)
+		}
+	}
+}
+
+func parseCategories(app *application, categoriesCatalog *map[string]*category) {
+	for _, categoryID := range app.Cats {
+		app.Categories = append(app.Categories, (*categoriesCatalog)[strconv.Itoa(categoryID)].Name)
+	}
 }
