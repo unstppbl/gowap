@@ -50,20 +50,18 @@ type category struct {
 
 // Wappalyzer implements analyze method as original wappalyzer does
 type Wappalyzer struct {
-	Collector       *colly.Collector
-	Apps            map[string]*application
-	Categories      map[string]*category
-	RandomUserAgent bool
-	MaxDepth        int
+	Collector  *colly.Collector
+	Apps       map[string]*application
+	Categories map[string]*category
 }
 
 // Init initializes wappalyzer
-func Init(signaturesFilePath string, randomUserAgent bool, MaxDepth int) (wapp *Wappalyzer, err error) {
+func Init(appsJSONPath string) (wapp *Wappalyzer, err error) {
 	wapp = &Wappalyzer{}
 
-	appsFile, err := ioutil.ReadFile(signaturesFilePath)
+	appsFile, err := ioutil.ReadFile(appsJSONPath)
 	if err != nil {
-		log.Errorf("Couldn't open file at %s\n", signaturesFilePath)
+		log.Errorf("Couldn't open file at %s\n", appsJSONPath)
 		return nil, err
 	}
 	temporary := &temp{}
@@ -115,7 +113,7 @@ func (wapp *Wappalyzer) Analyze(url string) (result string, err error) {
 	scraped := &collyData{}
 
 	wapp.Collector.OnRequest(func(r *colly.Request) {
-		log.Infof("Visiting %s", r.URL)
+		// log.Infof("Visiting %s", r.URL)
 	})
 
 	wapp.Collector.OnError(func(_ *colly.Response, err error) {
@@ -123,8 +121,7 @@ func (wapp *Wappalyzer) Analyze(url string) (result string, err error) {
 	})
 
 	wapp.Collector.OnResponse(func(r *colly.Response) {
-		log.Infof("Visited %s", r.Request.URL)
-		log.Infof("Status code: %d", r.StatusCode)
+		// log.Infof("Visited %s", r.Request.URL)
 
 		scraped.headers = make(map[string][]string)
 		for k, v := range *r.Headers {
@@ -181,7 +178,7 @@ func (wapp *Wappalyzer) Analyze(url string) (result string, err error) {
 	}
 	var appsArray []*resultApp
 	for _, app := range detectedApplications {
-		log.Printf("[%-25s] DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)
+		// log.Printf("URL: %-25s DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)
 		appsArray = append(appsArray, app)
 	}
 	resultByte, err := json.Marshal(appsArray)
