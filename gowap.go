@@ -348,7 +348,9 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 					}
 				} else {
 					appPattern.str = item
-					reg, err := regexp.Compile(fmt.Sprintf("%s%s", "(?i)", strings.Replace(item, "/", `\/`, -1)))
+					first := strings.Replace(item, `\/`, `/`, -1)
+					second := strings.Replace(first, `\\`, `\`, -1)
+					reg, err := regexp.Compile(fmt.Sprintf("%s%s", "(?i)", strings.Replace(second, `/`, `\/`, -1)))
 					if err == nil {
 						appPattern.regex = reg
 					}

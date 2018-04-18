@@ -13,6 +13,5 @@ Call `Init()` function from package providing path to the apps.json file, it wil
 
 ```go
 func Init(appsJSONPath string) (wapp *Wappalyzer, err error)
-
 func (wapp *Wappalyzer) Analyze(url string) (result string, err error)
 ```
