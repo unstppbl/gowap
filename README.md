@@ -9,7 +9,7 @@
 
 ## Usage
 
-Call `Init()` function from package providing path to the apps.json file, it will return `Wappalyzer` object on which you can call Analyze method providing URL string.
+Call `Init()` function from package, it will return `Wappalyzer` object on which you can call Analyze method with URL string as argument.
 
 ```go
 func Init(appsJSONPath string) (wapp *Wappalyzer, err error)

@@ -116,10 +116,6 @@ func (wapp *Wappalyzer) Analyze(url string) (result string, err error) {
 		// log.Infof("Visiting %s", r.URL)
 	})
 
-	wapp.Collector.OnError(func(_ *colly.Response, err error) {
-		log.Error(err)
-	})
-
 	wapp.Collector.OnResponse(func(r *colly.Response) {
 		// log.Infof("Visited %s", r.Request.URL)
 
@@ -382,11 +378,13 @@ func resolveExcludes(detected *map[string]*resultApp, value interface{}) {
 func resolveImplies(apps *map[string]*application, detected *map[string]*resultApp, value interface{}) {
 	impliedApps := parseImpliesExcludes(value)
 	for _, implied := range impliedApps {
-		app := (*apps)[implied]
-		resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
-		(*detected)[implied] = resApp
-		if app.Implies != nil {
-			resolveImplies(apps, detected, app.Implies)
+		app, ok := (*apps)[implied]
+		if ok {
+			resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
+			(*detected)[implied] = resApp
+			if app.Implies != nil {
+				resolveImplies(apps, detected, app.Implies)
+			}
 		}
 	}
 }
