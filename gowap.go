@@ -379,7 +379,7 @@ func resolveImplies(apps *map[string]*application, detected *map[string]*resultA
 	impliedApps := parseImpliesExcludes(value)
 	for _, implied := range impliedApps {
 		app, ok := (*apps)[implied]
-		if ok {
+		if _, ok2 := (*detected)[implied]; ok && !ok2 {
 			resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 			(*detected)[implied] = resApp
 			if app.Implies != nil {
