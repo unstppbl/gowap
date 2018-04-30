@@ -53,10 +53,11 @@ type Wappalyzer struct {
 	Collector  *colly.Collector
 	Apps       map[string]*application
 	Categories map[string]*category
+	JSON       bool
 }
 
 // Init initializes wappalyzer
-func Init(appsJSONPath string) (wapp *Wappalyzer, err error) {
+func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
 	wapp = &Wappalyzer{}
 
 	appsFile, err := ioutil.ReadFile(appsJSONPath)
@@ -90,6 +91,7 @@ func Init(appsJSONPath string) (wapp *Wappalyzer, err error) {
 		parseCategories(app, &wapp.Categories)
 		wapp.Apps[k] = app
 	}
+	wapp.JSON = JSON
 	return wapp, nil
 }
 
@@ -102,7 +104,7 @@ type resultApp struct {
 }
 
 // Analyze retrieves application stack used on the provided web-site
-func (wapp *Wappalyzer) Analyze(url string) (result string, err error) {
+func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 	wapp.Collector = colly.NewCollector(
 		colly.IgnoreRobotsTxt(),
 	)
@@ -111,10 +113,6 @@ func (wapp *Wappalyzer) Analyze(url string) (result string, err error) {
 
 	detectedApplications := make(map[string]*resultApp)
 	scraped := &collyData{}
-
-	wapp.Collector.OnRequest(func(r *colly.Request) {
-		// log.Infof("Visiting %s", r.URL)
-	})
 
 	wapp.Collector.OnResponse(func(r *colly.Response) {
 		// log.Infof("Visited %s", r.Request.URL)
@@ -146,7 +144,7 @@ func (wapp *Wappalyzer) Analyze(url string) (result string, err error) {
 
 	err = wapp.Collector.Visit(url)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	for _, app := range wapp.Apps {
@@ -172,17 +170,19 @@ func (wapp *Wappalyzer) Analyze(url string) (result string, err error) {
 			resolveImplies(&wapp.Apps, &detectedApplications, app.implies)
 		}
 	}
-	var appsArray []*resultApp
+	res := []map[string]interface{}{}
 	for _, app := range detectedApplications {
 		// log.Printf("URL: %-25s DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)
-		appsArray = append(appsArray, app)
+		res = append(res, map[string]interface{}{"name": app.Name, "version": app.Version, "categories": app.Categories})
 	}
-	resultByte, err := json.Marshal(appsArray)
-	if err != nil {
-		log.Errorf("Couldn't marshal result: %s\n", err)
-		return "", err
+	if wapp.JSON {
+		j, err := json.Marshal(res)
+		if err != nil {
+			return nil, err
+		}
+		return string(j), nil
 	}
-	return string(resultByte), nil
+	return res, nil
 }
 
 func analyzeURL(app *application, url string, detectedApplications *map[string]*resultApp) {
