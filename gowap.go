@@ -1,9 +1,11 @@
 package gowap
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -105,9 +107,14 @@ type resultApp struct {
 
 // Analyze retrieves application stack used on the provided web-site
 func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
 	wapp.Collector = colly.NewCollector(
 		colly.IgnoreRobotsTxt(),
 	)
+	wapp.Collector.WithTransport(tr)
+
 	extensions.Referrer(wapp.Collector)
 	extensions.RandomUserAgent(wapp.Collector)
 
@@ -116,7 +123,6 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 
 	wapp.Collector.OnResponse(func(r *colly.Response) {
 		// log.Infof("Visited %s", r.Request.URL)
-
 		scraped.headers = make(map[string][]string)
 		for k, v := range *r.Headers {
 			lowerCaseKey := strings.ToLower(k)
