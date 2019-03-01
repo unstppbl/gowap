@@ -56,12 +56,15 @@ type Wappalyzer struct {
 	Apps       map[string]*application
 	Categories map[string]*category
 	JSON       bool
+	Transport  *http.Transport
 }
 
 // Init initializes wappalyzer
 func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
 	wapp = &Wappalyzer{}
-
+	wapp.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
 	appsFile, err := ioutil.ReadFile(appsJSONPath)
 	if err != nil {
 		log.Errorf("Couldn't open file at %s\n", appsJSONPath)
@@ -107,13 +110,10 @@ type resultApp struct {
 
 // Analyze retrieves application stack used on the provided web-site
 func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
 	wapp.Collector = colly.NewCollector(
 		colly.IgnoreRobotsTxt(),
 	)
-	wapp.Collector.WithTransport(tr)
+	wapp.Collector.WithTransport(wapp.Transport)
 
 	extensions.Referrer(wapp.Collector)
 	extensions.RandomUserAgent(wapp.Collector)
