@@ -13,7 +13,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 
 	"github.com/gocolly/colly"
-	"github.com/gocolly/colly/extensions"
+	extensions "github.com/gocolly/colly/extensions"
 )
 
 type collyData struct {
@@ -115,7 +115,7 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 	)
 	wapp.Collector.WithTransport(wapp.Transport)
 
-	extensions.Referrer(wapp.Collector)
+	extensions.Referer(wapp.Collector)
 	extensions.RandomUserAgent(wapp.Collector)
 
 	detectedApplications := make(map[string]*resultApp)
