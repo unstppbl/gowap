@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"testing"
 
-	log "github.com/Sirupsen/logrus"
-	"github.com/altsab/gowap"
+	log "github.com/sirupsen/logrus"
 )
 
 func TestGowap(t *testing.T) {
 	url := "https://tengrinews.kz"
-	wapp, err := gowap.Init("./apps.json", false)
+	wapp, err := Init("./apps.json", false)
 	if err != nil {
 		log.Errorln(err)
 		t.FailNow()
