@@ -9,7 +9,7 @@
 
 ## Usage
 
-`go get github.com/altsab/gowap`
+`go get github.com/unstppbl/gowap`
 
 Call `Init()` function from package providing path to `apps.json` file and boolean value to choose between JSON (`true`) and raw output, it will return `Wappalyzer` object on which you can call Analyze method with URL string as argument.
 
