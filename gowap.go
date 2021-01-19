@@ -26,7 +26,7 @@ type collyData struct {
 }
 
 type temp struct {
-	Apps       map[string]*json.RawMessage `json:"apps"`
+	Apps       map[string]*json.RawMessage `json:"technologies"`
 	Categories map[string]*json.RawMessage `json:"categories"`
 }
 type application struct {
