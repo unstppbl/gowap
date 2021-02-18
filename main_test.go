@@ -1,7 +1,6 @@
 package gowap
 
 import (
-	"encoding/json"
 	"testing"
 
 	log "github.com/sirupsen/logrus"

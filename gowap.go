@@ -2,7 +2,6 @@ package gowap
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -16,7 +15,11 @@ import (
 
 	"github.com/gocolly/colly"
 	extensions "github.com/gocolly/colly/extensions"
+
+	jsoniter "github.com/json-iterator/go"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type collyData struct {
 	html    string
@@ -26,8 +29,8 @@ type collyData struct {
 }
 
 type temp struct {
-	Apps       map[string]*json.RawMessage `json:"technologies"`
-	Categories map[string]*json.RawMessage `json:"categories"`
+	Apps       map[string]*jsoniter.RawMessage `json:"technologies"`
+	Categories map[string]*jsoniter.RawMessage `json:"categories"`
 }
 type application struct {
 	Name       string   `json:"name,ompitempty"`
