@@ -26,6 +26,7 @@ type collyData struct {
 	headers map[string][]string
 	scripts []string
 	cookies map[string]string
+	meta    map[string][]string
 }
 
 type temp struct {
@@ -37,17 +38,17 @@ type application struct {
 	Version    string   `json:"version"`
 	Categories []string `json:"categories,omitempty"`
 
-	Cats     []int                  `json:"cats,omitempty"`
-	Cookies  interface{}            `json:"cookies,omitempty"`
-	Js       interface{}            `json:"js,omitempty"`
-	Headers  interface{}            `json:"headers,omitempty"`
-	HTML     interface{}            `json:"html,omitempty"`
-	Excludes interface{}            `json:"excludes,omitempty"`
-	Implies  interface{}            `json:"implies,omitempty"`
-	Meta     map[string]interface{} `json:"meta,omitempty"`
-	Scripts  interface{}            `json:"script,omitempty"`
-	URL      string                 `json:"url,omitempty"`
-	Website  string                 `json:"website,omitempty"`
+	Cats     []int       `json:"cats,omitempty"`
+	Cookies  interface{} `json:"cookies,omitempty"`
+	Js       interface{} `json:"js,omitempty"`
+	Headers  interface{} `json:"headers,omitempty"`
+	HTML     interface{} `json:"html,omitempty"`
+	Excludes interface{} `json:"excludes,omitempty"`
+	Implies  interface{} `json:"implies,omitempty"`
+	Meta     interface{} `json:"meta,omitempty"`
+	Scripts  interface{} `json:"script,omitempty"`
+	URL      string      `json:"url,omitempty"`
+	Website  string      `json:"website,omitempty"`
 }
 
 type category struct {
@@ -156,6 +157,16 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 		}
 	})
 
+	//Scrapping meta elements
+	scraped.meta = make(map[string][]string)
+	wapp.Collector.OnHTML("meta", func(e *colly.HTMLElement) {
+		name := e.Attr(`name`)
+		if name == "" {
+			name = e.Attr(`property`)
+		}
+		scraped.meta[strings.ToLower(name)] = append(scraped.meta[name], e.Attr("content"))
+	})
+
 	wapp.Collector.OnHTML("script", func(e *colly.HTMLElement) {
 		scraped.scripts = append(scraped.scripts, e.Attr("src"))
 	})
@@ -178,6 +189,9 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 		}
 		if app.Scripts != nil {
 			analyzeScripts(app, scraped.scripts, &detectedApplications)
+		}
+		if app.Meta != nil {
+			analyzeMeta(app, scraped.meta, &detectedApplications)
 		}
 	}
 	for _, app := range detectedApplications {
@@ -289,6 +303,26 @@ func analyzeHTML(app *application, html string, detectedApplications *map[string
 	}
 }
 
+func analyzeMeta(app *application, metas map[string][]string, detectedApplications *map[string]*resultApp) {
+	patterns := parsePatterns(app.Meta)
+	for metaName, v := range patterns {
+		metaNameLowerCase := strings.ToLower(metaName)
+		for _, pattrn := range v {
+			if metaSlice, ok := metas[metaNameLowerCase]; ok {
+				for _, meta := range metaSlice {
+					if pattrn.regex != nil && pattrn.regex.Match([]byte(meta)) {
+						if _, ok := (*detectedApplications)[app.Name]; !ok {
+							resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
+							(*detectedApplications)[resApp.Name] = resApp
+							detectVersion(resApp, pattrn, &meta)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func detectVersion(app *resultApp, pattrn *pattern, value *string) {
 	versions := make(map[string]interface{})
 	version := pattrn.version
@@ -331,7 +365,11 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 		parsed["main"] = append(parsed["main"], ptrn)
 	case map[string]interface{}:
 		for k, v := range ptrn {
-			parsed[k] = append(parsed[k], v.(string))
+			//Abicart uses array in json, not string, bug in https://github.com/AliasIO/wappalyzer/commit/e3bf786826318160f4016b206f5dcd9853c50da0 ?
+			_, ok := v.(string)
+			if ok {
+				parsed[k] = append(parsed[k], v.(string))
+			}
 		}
 	case []interface{}:
 		var slice []string
