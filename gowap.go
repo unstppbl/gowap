@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -20,6 +21,7 @@ import (
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
+var wg sync.WaitGroup
 
 type collyData struct {
 	html    string
@@ -177,23 +179,30 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 	}
 
 	for _, app := range wapp.Apps {
-		analyzeURL(app, url, &detectedApplications)
-		if app.HTML != nil {
-			analyzeHTML(app, scraped.html, &detectedApplications)
-		}
-		if app.Headers != nil {
-			analyzeHeaders(app, scraped.headers, &detectedApplications)
-		}
-		if app.Cookies != nil {
-			analyzeCookies(app, scraped.cookies, &detectedApplications)
-		}
-		if app.Scripts != nil {
-			analyzeScripts(app, scraped.scripts, &detectedApplications)
-		}
-		if app.Meta != nil {
-			analyzeMeta(app, scraped.meta, &detectedApplications)
-		}
+		wg.Add(1)
+		go func(app *application) {
+			defer wg.Done()
+			analyzeURL(app, url, &detectedApplications)
+			if app.HTML != nil {
+				analyzeHTML(app, scraped.html, &detectedApplications)
+			}
+			if app.Headers != nil {
+				analyzeHeaders(app, scraped.headers, &detectedApplications)
+			}
+			if app.Cookies != nil {
+				analyzeCookies(app, scraped.cookies, &detectedApplications)
+			}
+			if app.Scripts != nil {
+				analyzeScripts(app, scraped.scripts, &detectedApplications)
+			}
+			if app.Meta != nil {
+				analyzeMeta(app, scraped.meta, &detectedApplications)
+			}
+		}(app)
 	}
+
+	wg.Wait()
+
 	for _, app := range detectedApplications {
 		if app.excludes != nil {
 			resolveExcludes(&detectedApplications, app.excludes)
@@ -221,7 +230,7 @@ func analyzeURL(app *application, url string, detectedApplications *map[string]*
 	patterns := parsePatterns(app.URL)
 	for _, v := range patterns {
 		for _, pattrn := range v {
-			if pattrn.regex != nil && pattrn.regex.Match([]byte(url)) {
+			if pattrn.regex != nil && pattrn.regex.MatchString(url) {
 				if _, ok := (*detectedApplications)[app.Name]; !ok {
 					resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 					(*detectedApplications)[resApp.Name] = resApp
@@ -238,7 +247,7 @@ func analyzeScripts(app *application, scripts []string, detectedApplications *ma
 		for _, pattrn := range v {
 			if pattrn.regex != nil {
 				for _, script := range scripts {
-					if pattrn.regex.Match([]byte(script)) {
+					if pattrn.regex.MatchString(script) {
 						if _, ok := (*detectedApplications)[app.Name]; !ok {
 							resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 							(*detectedApplications)[resApp.Name] = resApp
@@ -258,7 +267,7 @@ func analyzeHeaders(app *application, headers map[string][]string, detectedAppli
 		for _, pattrn := range v {
 			if headersSlice, ok := headers[headerNameLowerCase]; ok {
 				for _, header := range headersSlice {
-					if pattrn.regex != nil && pattrn.regex.Match([]byte(header)) {
+					if pattrn.regex != nil && pattrn.regex.MatchString(header) {
 						if _, ok := (*detectedApplications)[app.Name]; !ok {
 							resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 							(*detectedApplications)[resApp.Name] = resApp
@@ -291,7 +300,7 @@ func analyzeHTML(app *application, html string, detectedApplications *map[string
 	patterns := parsePatterns(app.HTML)
 	for _, v := range patterns {
 		for _, pattrn := range v {
-			if pattrn.regex != nil && pattrn.regex.Match([]byte(html)) {
+			if pattrn.regex != nil && pattrn.regex.MatchString(html) {
 				if _, ok := (*detectedApplications)[app.Name]; !ok {
 					resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 					(*detectedApplications)[resApp.Name] = resApp
@@ -310,7 +319,7 @@ func analyzeMeta(app *application, metas map[string][]string, detectedApplicatio
 		for _, pattrn := range v {
 			if metaSlice, ok := metas[metaNameLowerCase]; ok {
 				for _, meta := range metaSlice {
-					if pattrn.regex != nil && pattrn.regex.Match([]byte(meta)) {
+					if pattrn.regex != nil && pattrn.regex.MatchString(meta) {
 						if _, ok := (*detectedApplications)[app.Name]; !ok {
 							resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 							(*detectedApplications)[resApp.Name] = resApp
