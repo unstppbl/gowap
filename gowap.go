@@ -22,6 +22,7 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 var wg sync.WaitGroup
+var appMu sync.Mutex
 
 type collyData struct {
 	html    string
@@ -231,11 +232,13 @@ func analyzeURL(app *application, url string, detectedApplications *map[string]*
 	for _, v := range patterns {
 		for _, pattrn := range v {
 			if pattrn.regex != nil && pattrn.regex.MatchString(url) {
+				appMu.Lock()
 				if _, ok := (*detectedApplications)[app.Name]; !ok {
 					resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 					(*detectedApplications)[resApp.Name] = resApp
 					detectVersion(resApp, pattrn, &url)
 				}
+				appMu.Unlock()
 			}
 		}
 	}
@@ -248,11 +251,13 @@ func analyzeScripts(app *application, scripts []string, detectedApplications *ma
 			if pattrn.regex != nil {
 				for _, script := range scripts {
 					if pattrn.regex.MatchString(script) {
+						appMu.Lock()
 						if _, ok := (*detectedApplications)[app.Name]; !ok {
 							resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 							(*detectedApplications)[resApp.Name] = resApp
 							detectVersion(resApp, pattrn, &script)
 						}
+						appMu.Unlock()
 					}
 				}
 			}
@@ -268,11 +273,13 @@ func analyzeHeaders(app *application, headers map[string][]string, detectedAppli
 			if headersSlice, ok := headers[headerNameLowerCase]; ok {
 				for _, header := range headersSlice {
 					if pattrn.regex != nil && pattrn.regex.MatchString(header) {
+						appMu.Lock()
 						if _, ok := (*detectedApplications)[app.Name]; !ok {
 							resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 							(*detectedApplications)[resApp.Name] = resApp
 							detectVersion(resApp, pattrn, &header)
 						}
+						appMu.Unlock()
 					}
 				}
 			}
@@ -286,11 +293,13 @@ func analyzeCookies(app *application, cookies map[string]string, detectedApplica
 		cookieNameLowerCase := strings.ToLower(cookieName)
 		for _, pattrn := range v {
 			if cookie, ok := cookies[cookieNameLowerCase]; ok && pattrn.regex != nil && pattrn.regex.MatchString(cookie) {
+				appMu.Lock()
 				if _, ok := (*detectedApplications)[app.Name]; !ok {
 					resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 					(*detectedApplications)[resApp.Name] = resApp
 					detectVersion(resApp, pattrn, &cookie)
 				}
+				appMu.Unlock()
 			}
 		}
 	}
@@ -301,11 +310,13 @@ func analyzeHTML(app *application, html string, detectedApplications *map[string
 	for _, v := range patterns {
 		for _, pattrn := range v {
 			if pattrn.regex != nil && pattrn.regex.MatchString(html) {
+				appMu.Lock()
 				if _, ok := (*detectedApplications)[app.Name]; !ok {
 					resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 					(*detectedApplications)[resApp.Name] = resApp
 					detectVersion(resApp, pattrn, &html)
 				}
+				appMu.Unlock()
 			}
 		}
 
@@ -320,11 +331,13 @@ func analyzeMeta(app *application, metas map[string][]string, detectedApplicatio
 			if metaSlice, ok := metas[metaNameLowerCase]; ok {
 				for _, meta := range metaSlice {
 					if pattrn.regex != nil && pattrn.regex.MatchString(meta) {
+						appMu.Lock()
 						if _, ok := (*detectedApplications)[app.Name]; !ok {
 							resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 							(*detectedApplications)[resApp.Name] = resApp
 							detectVersion(resApp, pattrn, &meta)
 						}
+						appMu.Unlock()
 					}
 				}
 			}
@@ -339,9 +352,9 @@ func detectVersion(app *resultApp, pattrn *pattern, value *string) {
 		for _, slice := range slices {
 			for i, match := range slice {
 				reg, _ := regexp.Compile(fmt.Sprintf("%s%d%s", "\\\\", i, "\\?([^:]+):(.*)$"))
-				ternary := reg.FindAll([]byte(version), -1)
+				ternary := reg.FindAllString(version, -1)
 				if ternary != nil && len(ternary) == 3 {
-					version = strings.Replace(version, string(ternary[0]), string(ternary[1]), -1)
+					version = strings.Replace(version, ternary[0], ternary[1], -1)
 				}
 				reg2, _ := regexp.Compile(fmt.Sprintf("%s%d", "\\\\", i))
 				version = reg2.ReplaceAllString(version, match)
@@ -352,9 +365,11 @@ func detectVersion(app *resultApp, pattrn *pattern, value *string) {
 		}
 		if len(versions) != 0 {
 			for ver := range versions {
+				appMu.Lock()
 				if ver > app.Version {
 					app.Version = ver
 				}
+				appMu.Unlock()
 			}
 		}
 	}
