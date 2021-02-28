@@ -187,16 +187,16 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 			if app.HTML != nil {
 				analyzeHTML(app, scraped.html, &detectedApplications)
 			}
-			if app.Headers != nil {
+			if len(scraped.headers) > 0 && app.Headers != nil {
 				analyzeHeaders(app, scraped.headers, &detectedApplications)
 			}
-			if app.Cookies != nil {
+			if len(scraped.cookies) > 0 && app.Cookies != nil {
 				analyzeCookies(app, scraped.cookies, &detectedApplications)
 			}
-			if app.Scripts != nil {
+			if len(scraped.scripts) > 0 && app.Scripts != nil {
 				analyzeScripts(app, scraped.scripts, &detectedApplications)
 			}
-			if app.Meta != nil {
+			if len(scraped.meta) > 0 && app.Meta != nil {
 				analyzeMeta(app, scraped.meta, &detectedApplications)
 			}
 		}(app)
@@ -365,11 +365,9 @@ func detectVersion(app *resultApp, pattrn *pattern, value *string) {
 		}
 		if len(versions) != 0 {
 			for ver := range versions {
-				appMu.Lock()
 				if ver > app.Version {
 					app.Version = ver
 				}
-				appMu.Unlock()
 			}
 		}
 	}
@@ -389,10 +387,15 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 		parsed["main"] = append(parsed["main"], ptrn)
 	case map[string]interface{}:
 		for k, v := range ptrn {
-			//Abicart uses array in json, not string, bug in https://github.com/AliasIO/wappalyzer/commit/e3bf786826318160f4016b206f5dcd9853c50da0 ?
-			_, ok := v.(string)
-			if ok {
+			switch content := v.(type) {
+			case string:
 				parsed[k] = append(parsed[k], v.(string))
+			case []interface{}:
+				for _, v1 := range content {
+					parsed[k] = append(parsed[k], v1.(string))
+				}
+			default:
+				log.Errorf("Unkown type in parsePatterns: %T\n", v)
 			}
 		}
 	case []interface{}:
