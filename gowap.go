@@ -14,9 +14,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/gocolly/colly"
-	extensions "github.com/gocolly/colly/extensions"
-
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/proto"
 	jsoniter "github.com/json-iterator/go"
 )
 
@@ -25,6 +24,8 @@ var wg sync.WaitGroup
 var appMu sync.Mutex
 
 type collyData struct {
+	status  int
+	url     string
 	html    string
 	headers map[string][]string
 	scripts []string
@@ -49,7 +50,7 @@ type application struct {
 	Excludes interface{} `json:"excludes,omitempty"`
 	Implies  interface{} `json:"implies,omitempty"`
 	Meta     interface{} `json:"meta,omitempty"`
-	Scripts  interface{} `json:"script,omitempty"`
+	Scripts  interface{} `json:"scripts,omitempty"`
 	URL      string      `json:"url,omitempty"`
 	Website  string      `json:"website,omitempty"`
 }
@@ -61,7 +62,7 @@ type category struct {
 
 // Wappalyzer implements analyze method as original wappalyzer does
 type Wappalyzer struct {
-	Collector  *colly.Collector
+	//Collector  *colly.Collector
 	Apps       map[string]*application
 	Categories map[string]*category
 	JSON       bool
@@ -126,18 +127,18 @@ type resultApp struct {
 
 // Analyze retrieves application stack used on the provided web-site
 func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
-	wapp.Collector = colly.NewCollector(
+	/*wapp.Collector = colly.NewCollector(
 		colly.IgnoreRobotsTxt(),
 	)
 	wapp.Collector.WithTransport(wapp.Transport)
 
 	extensions.Referer(wapp.Collector)
-	extensions.RandomUserAgent(wapp.Collector)
+	extensions.RandomUserAgent(wapp.Collector)*/
 
 	detectedApplications := make(map[string]*resultApp)
 	scraped := &collyData{}
 
-	wapp.Collector.OnResponse(func(r *colly.Response) {
+	/*wapp.Collector.OnResponse(func(r *colly.Response) {
 		// log.Infof("Visited %s", r.Request.URL)
 		scraped.headers = make(map[string][]string)
 		for k, v := range *r.Headers {
@@ -177,6 +178,47 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 	err = wapp.Collector.Visit(url)
 	if err != nil {
 		return nil, err
+	}*/
+
+	var e proto.NetworkResponseReceived
+	page := rod.New().MustConnect().MustPage("")
+	wait := page.WaitEvent(&e)
+	go page.MustHandleDialog()
+	page.MustNavigate(url)
+	wait()
+
+	scraped.status = e.Response.Status
+	scraped.url = e.Response.URL
+	scraped.headers = make(map[string][]string)
+	for header, value := range e.Response.Headers {
+		lowerCaseKey := strings.ToLower(header)
+		scraped.headers[lowerCaseKey] = append(scraped.headers[lowerCaseKey], value.String())
+	}
+
+	scraped.html = page.MustWaitLoad().MustHTML()
+
+	scripts := page.MustWaitLoad().MustElements("script")
+	for _, script := range scripts {
+		if src := script.MustProperty("src").String(); len(src) > 0 {
+			scraped.scripts = append(scraped.scripts, src)
+		}
+	}
+
+	metas := page.MustWaitLoad().MustElements("meta")
+	scraped.meta = make(map[string][]string)
+	for _, meta := range metas {
+		name := strings.ToLower(meta.MustProperty("name").String())
+		if len(name) <= 0 {
+			name = strings.ToLower(meta.MustProperty("property").String())
+		}
+		scraped.meta[name] = append(scraped.meta[name], meta.MustProperty("content").String())
+	}
+
+	scraped.cookies = make(map[string]string)
+	str := []string{}
+	cookies, _ := page.MustWaitLoad().Cookies(str)
+	for _, cookie := range cookies {
+		scraped.cookies[cookie.Name] = cookie.Value
 	}
 
 	for _, app := range wapp.Apps {
