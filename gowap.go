@@ -1,11 +1,10 @@
 package gowap
 
 import (
-	"crypto/tls"
+	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,7 +22,7 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 var wg sync.WaitGroup
 var appMu sync.Mutex
 
-type collyData struct {
+type scrapedData struct {
 	status  int
 	url     string
 	html    string
@@ -62,26 +61,32 @@ type category struct {
 
 // Wappalyzer implements analyze method as original wappalyzer does
 type Wappalyzer struct {
-	//Collector  *colly.Collector
-	Apps       map[string]*application
-	Categories map[string]*category
-	JSON       bool
-	Transport  *http.Transport
+	Browser                *rod.Browser
+	BrowserTimeoutSeconds  int
+	NetworkTimeoutSeconds  int
+	PageLoadTimeoutSeconds int
+	Apps                   map[string]*application
+	Categories             map[string]*category
+	JSON                   bool
 }
 
 // Init initializes wappalyzer
 func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
-	wapp = &Wappalyzer{}
-	wapp.Transport = &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: time.Second * 90,
-		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+	wapp = &Wappalyzer{BrowserTimeoutSeconds: 2, NetworkTimeoutSeconds: 2, PageLoadTimeoutSeconds: 2}
+
+	errRod := rod.Try(func() {
+		wapp.Browser = rod.New().Timeout(time.Duration(wapp.BrowserTimeoutSeconds) * time.Second).MustConnect()
+	})
+	if errors.Is(errRod, context.DeadlineExceeded) {
+		log.Errorf("Timeout reached (2s) while connecting Browser")
+		return wapp, errRod
+	} else if errRod != nil {
+		log.Errorf("Error while connecting Browser")
+		return wapp, errRod
 	}
+
+	wapp.Browser.IgnoreCertErrors(true)
+
 	appsFile, err := ioutil.ReadFile(appsJSONPath)
 	if err != nil {
 		log.Errorf("Couldn't open file at %s\n", appsJSONPath)
@@ -127,64 +132,27 @@ type resultApp struct {
 
 // Analyze retrieves application stack used on the provided web-site
 func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
-	/*wapp.Collector = colly.NewCollector(
-		colly.IgnoreRobotsTxt(),
-	)
-	wapp.Collector.WithTransport(wapp.Transport)
-
-	extensions.Referer(wapp.Collector)
-	extensions.RandomUserAgent(wapp.Collector)*/
 
 	detectedApplications := make(map[string]*resultApp)
-	scraped := &collyData{}
-
-	/*wapp.Collector.OnResponse(func(r *colly.Response) {
-		// log.Infof("Visited %s", r.Request.URL)
-		scraped.headers = make(map[string][]string)
-		for k, v := range *r.Headers {
-			lowerCaseKey := strings.ToLower(k)
-			scraped.headers[lowerCaseKey] = v
-		}
-
-		scraped.html = string(r.Body)
-
-		scraped.cookies = make(map[string]string)
-		for _, cookie := range scraped.headers["set-cookie"] {
-			keyValues := strings.Split(cookie, ";")
-			for _, keyValueString := range keyValues {
-				keyValueSlice := strings.Split(keyValueString, "=")
-				if len(keyValueSlice) > 1 {
-					key, value := keyValueSlice[0], keyValueSlice[1]
-					scraped.cookies[key] = value
-				}
-			}
-		}
-	})
-
-	//Scrapping meta elements
-	scraped.meta = make(map[string][]string)
-	wapp.Collector.OnHTML("meta", func(e *colly.HTMLElement) {
-		name := e.Attr(`name`)
-		if name == "" {
-			name = e.Attr(`property`)
-		}
-		scraped.meta[strings.ToLower(name)] = append(scraped.meta[name], e.Attr("content"))
-	})
-
-	wapp.Collector.OnHTML("script", func(e *colly.HTMLElement) {
-		scraped.scripts = append(scraped.scripts, e.Attr("src"))
-	})
-
-	err = wapp.Collector.Visit(url)
-	if err != nil {
-		return nil, err
-	}*/
+	scraped := &scrapedData{}
+	res := []map[string]interface{}{}
 
 	var e proto.NetworkResponseReceived
-	page := rod.New().MustConnect().MustPage("")
+	page := wapp.Browser.MustPage("")
 	wait := page.WaitEvent(&e)
 	go page.MustHandleDialog()
-	page.MustNavigate(url)
+
+	errRod := rod.Try(func() {
+		page.Timeout(time.Duration(wapp.NetworkTimeoutSeconds) * time.Second).MustNavigate(url)
+	})
+	if errors.Is(errRod, context.DeadlineExceeded) {
+		log.Errorf("Timeout reached (2s) while visiting %s", url)
+		return res, errRod
+	} else if errRod != nil {
+		log.Errorf("Error while visiting %s", url)
+		return res, errRod
+	}
+
 	wait()
 
 	scraped.status = e.Response.Status
@@ -195,28 +163,45 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 		scraped.headers[lowerCaseKey] = append(scraped.headers[lowerCaseKey], value.String())
 	}
 
-	scraped.html = page.MustWaitLoad().MustHTML()
+	//TODO : headers and cookies could be parsed before load completed
+	errRod = rod.Try(func() {
+		page.Timeout(time.Duration(wapp.PageLoadTimeoutSeconds) * time.Second).MustWaitLoad()
+	})
+	if errors.Is(errRod, context.DeadlineExceeded) {
+		log.Errorf("Timeout reached (2s) while loading %s", url)
+		return res, errRod
+	} else if errRod != nil {
+		log.Errorf("Error while visiting %s", url)
+		return res, errRod
+	}
 
-	scripts := page.MustWaitLoad().MustElements("script")
+	scraped.html = page.MustHTML()
+
+	scripts, _ := page.Elements("script")
 	for _, script := range scripts {
-		if src := script.MustProperty("src").String(); len(src) > 0 {
-			scraped.scripts = append(scraped.scripts, src)
+		if src, _ := script.Property("src"); src.Val() != nil {
+			scraped.scripts = append(scraped.scripts, src.String())
 		}
 	}
 
-	metas := page.MustWaitLoad().MustElements("meta")
+	metas, _ := page.Elements("meta")
 	scraped.meta = make(map[string][]string)
 	for _, meta := range metas {
-		name := strings.ToLower(meta.MustProperty("name").String())
-		if len(name) <= 0 {
-			name = strings.ToLower(meta.MustProperty("property").String())
+		name, _ := meta.Property("name")
+		if name.Val() == nil {
+			name, _ = meta.Property("property")
 		}
-		scraped.meta[name] = append(scraped.meta[name], meta.MustProperty("content").String())
+		if name.Val() != nil {
+			if content, _ := meta.Property("content"); content.Val() != nil {
+				nameLower := strings.ToLower(name.String())
+				scraped.meta[nameLower] = append(scraped.meta[nameLower], content.String())
+			}
+		}
 	}
 
 	scraped.cookies = make(map[string]string)
 	str := []string{}
-	cookies, _ := page.MustWaitLoad().Cookies(str)
+	cookies, _ := page.Cookies(str)
 	for _, cookie := range cookies {
 		scraped.cookies[cookie.Name] = cookie.Value
 	}
@@ -254,7 +239,7 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 			resolveImplies(&wapp.Apps, &detectedApplications, app.implies)
 		}
 	}
-	res := []map[string]interface{}{}
+
 	for _, app := range detectedApplications {
 		// log.Printf("URL: %-25s DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)
 		res = append(res, map[string]interface{}{"name": app.Name, "version": app.Version, "categories": app.Categories})
@@ -374,7 +359,7 @@ func analyzeMeta(app *application, metas map[string][]string, detectedApplicatio
 				for _, meta := range metaSlice {
 					if pattrn.regex != nil && pattrn.regex.MatchString(meta) {
 						appMu.Lock()
-						if _, ok := (*detectedApplications)[app.Name]; !ok {
+						if _, ok := (*detectedApplications)[app.Name]; !ok || (*detectedApplications)[app.Name].Version == "" {
 							resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
 							(*detectedApplications)[resApp.Name] = resApp
 							detectVersion(resApp, pattrn, &meta)
