@@ -71,7 +71,7 @@ type Wappalyzer struct {
 
 // Init initializes wappalyzer
 func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
-	wapp = &Wappalyzer{BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 2, PageLoadTimeoutSeconds: 2}
+	wapp = &Wappalyzer{BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 2}
 
 	errRod := rod.Try(func() {
 		wapp.Browser = rod.New().Timeout(time.Duration(wapp.BrowserTimeoutSeconds) * time.Second).MustConnect()
@@ -297,7 +297,7 @@ func analyzeHeaders(app *application, headers map[string][]string, detectedAppli
 		for _, pattrn := range v {
 			if headersSlice, ok := headers[headerNameLowerCase]; ok {
 				for _, header := range headersSlice {
-					if pattrn.regex != nil && pattrn.regex.MatchString(header) {
+					if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(header)) {
 						version := detectVersion(pattrn, &header)
 						addApp(app, detectedApplications, version, pattrn.confidence)
 					}
@@ -312,9 +312,11 @@ func analyzeCookies(app *application, cookies map[string]string, detectedApplica
 	for cookieName, v := range patterns {
 		cookieNameLowerCase := strings.ToLower(cookieName)
 		for _, pattrn := range v {
-			if cookie, ok := cookies[cookieNameLowerCase]; ok && pattrn.regex != nil && pattrn.regex.MatchString(cookie) {
-				version := detectVersion(pattrn, &cookie)
-				addApp(app, detectedApplications, version, pattrn.confidence)
+			if cookie, ok := cookies[cookieNameLowerCase]; ok {
+				if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(cookie)) {
+					version := detectVersion(pattrn, &cookie)
+					addApp(app, detectedApplications, version, pattrn.confidence)
+				}
 			}
 		}
 	}
@@ -340,7 +342,7 @@ func analyzeMeta(app *application, metas map[string][]string, detectedApplicatio
 		for _, pattrn := range v {
 			if metaSlice, ok := metas[metaNameLowerCase]; ok {
 				for _, meta := range metaSlice {
-					if pattrn.regex != nil && pattrn.regex.MatchString(meta) {
+					if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(meta)) {
 						version := detectVersion(pattrn, &meta)
 						addApp(app, detectedApplications, version, pattrn.confidence)
 					}
@@ -361,8 +363,10 @@ func analyseJS(app *application, page *rod.Page, detectedApplications *detected)
 				value = res.Value.String()
 			}
 			for _, pattrn := range v {
-				version := detectVersion(pattrn, &value)
-				addApp(app, detectedApplications, version, pattrn.confidence)
+				if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
+					version := detectVersion(pattrn, &value)
+					addApp(app, detectedApplications, version, pattrn.confidence)
+				}
 			}
 		}
 	}
@@ -388,6 +392,9 @@ func addApp(app *application, detectedApplications *detected, version string, co
 
 // detectVersion tries to extract version from value when app detected
 func detectVersion(pattrn *pattern, value *string) (res string) {
+	if pattrn.regex == nil {
+		return ""
+	}
 	versions := make(map[string]interface{})
 	version := pattrn.version
 	if slices := pattrn.regex.FindAllStringSubmatch(*value, -1); slices != nil {
