@@ -40,17 +40,18 @@ type application struct {
 	Version    string   `json:"version"`
 	Categories []string `json:"categories,omitempty"`
 
-	Cats     []int       `json:"cats,omitempty"`
-	Cookies  interface{} `json:"cookies,omitempty"`
-	Js       interface{} `json:"js,omitempty"`
-	Headers  interface{} `json:"headers,omitempty"`
-	HTML     interface{} `json:"html,omitempty"`
-	Excludes interface{} `json:"excludes,omitempty"`
-	Implies  interface{} `json:"implies,omitempty"`
-	Meta     interface{} `json:"meta,omitempty"`
-	Scripts  interface{} `json:"scripts,omitempty"`
-	URL      string      `json:"url,omitempty"`
-	Website  string      `json:"website,omitempty"`
+	Cats     []int                             `json:"cats,omitempty"`
+	Cookies  interface{}                       `json:"cookies,omitempty"`
+	Dom      map[string]map[string]interface{} `json:"dom,omitempty"`
+	Js       interface{}                       `json:"js,omitempty"`
+	Headers  interface{}                       `json:"headers,omitempty"`
+	HTML     interface{}                       `json:"html,omitempty"`
+	Excludes interface{}                       `json:"excludes,omitempty"`
+	Implies  interface{}                       `json:"implies,omitempty"`
+	Meta     interface{}                       `json:"meta,omitempty"`
+	Scripts  interface{}                       `json:"scripts,omitempty"`
+	URL      string                            `json:"url,omitempty"`
+	Website  string                            `json:"website,omitempty"`
 }
 
 type category struct {
@@ -74,7 +75,10 @@ func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
 	wapp = &Wappalyzer{BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 2}
 
 	errRod := rod.Try(func() {
-		wapp.Browser = rod.New().Timeout(time.Duration(wapp.BrowserTimeoutSeconds) * time.Second).MustConnect()
+		wapp.Browser = rod.
+			New().
+			Timeout(time.Duration(wapp.BrowserTimeoutSeconds) * time.Second).
+			MustConnect()
 	})
 	if errors.Is(errRod, context.DeadlineExceeded) {
 		log.Errorf("Timeout reached (%ds) while connecting Browser", wapp.BrowserTimeoutSeconds)
@@ -148,7 +152,9 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 	go page.MustHandleDialog()
 
 	errRod := rod.Try(func() {
-		page.Timeout(time.Duration(wapp.NetworkTimeoutSeconds) * time.Second).MustNavigate(url)
+		page.
+			Timeout(time.Duration(wapp.NetworkTimeoutSeconds) * time.Second).
+			MustNavigate(url)
 	})
 	if errors.Is(errRod, context.DeadlineExceeded) {
 		log.Errorf("Timeout reached (%ds) while visiting %s", wapp.NetworkTimeoutSeconds, url)
@@ -170,7 +176,9 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 
 	//TODO : headers and cookies could be parsed before load completed
 	errRod = rod.Try(func() {
-		page.Timeout(time.Duration(wapp.PageLoadTimeoutSeconds) * time.Second).MustWaitLoad()
+		page.
+			Timeout(time.Duration(wapp.PageLoadTimeoutSeconds) * time.Second).
+			MustWaitLoad()
 	})
 	if errors.Is(errRod, context.DeadlineExceeded) {
 		log.Errorf("Timeout reached (%ds) while loading %s", wapp.PageLoadTimeoutSeconds, url)
@@ -218,6 +226,9 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 			analyzeURL(app, url, detectedApplications)
 			if app.Js != nil {
 				analyseJS(app, page, detectedApplications)
+			}
+			if app.Dom != nil {
+				analyseDom(app, page, detectedApplications)
 			}
 			if app.HTML != nil {
 				analyzeHTML(app, scraped.html, detectedApplications)
@@ -366,6 +377,41 @@ func analyseJS(app *application, page *rod.Page, detectedApplications *detected)
 				if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
 					version := detectVersion(pattrn, &value)
 					addApp(app, detectedApplications, version, pattrn.confidence)
+				}
+			}
+		}
+	}
+}
+
+// analyseDom evals the DOM tries to match
+func analyseDom(app *application, page *rod.Page, detectedApplications *detected) {
+	for domSelector, v1 := range app.Dom {
+		//BUG : page.Element hangs, using page.Elements and take first el
+		res, err := page.Elements(domSelector)
+		resFirst := res.First()
+		if err == nil && resFirst != nil {
+			for domType, v := range v1 {
+				patterns := parsePatterns(v)
+				for attribute, pattrns := range patterns {
+					for _, pattrn := range pattrns {
+						value := ""
+						switch domType {
+						case "text":
+							value, _ = resFirst.Text()
+						case "properties":
+							if attr, err := resFirst.Property(attribute); err == nil && attr.Val() != nil {
+								value = attr.String()
+							}
+						case "attributes":
+							if attr, err := resFirst.Attribute(attribute); err == nil && attr != nil {
+								value = *attr
+							}
+						}
+						if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
+							version := detectVersion(pattrn, &value)
+							addApp(app, detectedApplications, version, pattrn.confidence)
+						}
+					}
 				}
 			}
 		}
