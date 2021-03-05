@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -29,6 +31,7 @@ type scrapedData struct {
 	scripts []string
 	cookies map[string]string
 	meta    map[string][]string
+	dns     map[string][]string
 }
 
 type temp struct {
@@ -50,6 +53,7 @@ type application struct {
 	Implies  interface{}                       `json:"implies,omitempty"`
 	Meta     interface{}                       `json:"meta,omitempty"`
 	Scripts  interface{}                       `json:"scripts,omitempty"`
+	DNS      interface{}                       `json:"dns,omitempty"`
 	URL      string                            `json:"url,omitempty"`
 	Website  string                            `json:"website,omitempty"`
 }
@@ -72,7 +76,7 @@ type Wappalyzer struct {
 
 // Init initializes wappalyzer
 func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
-	wapp = &Wappalyzer{BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 2}
+	wapp = &Wappalyzer{BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3}
 
 	errRod := rod.Try(func() {
 		wapp.Browser = rod.
@@ -140,7 +144,7 @@ type detected struct {
 }
 
 // Analyze retrieves application stack used on the provided web-site
-func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
+func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error) {
 
 	detectedApplications := &detected{new(sync.Mutex), make(map[string]*resultApp)}
 	scraped := &scrapedData{}
@@ -154,13 +158,13 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 	errRod := rod.Try(func() {
 		page.
 			Timeout(time.Duration(wapp.NetworkTimeoutSeconds) * time.Second).
-			MustNavigate(url)
+			MustNavigate(paramURL)
 	})
 	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while visiting %s", wapp.NetworkTimeoutSeconds, url)
+		log.Errorf("Timeout reached (%ds) while visiting %s", wapp.NetworkTimeoutSeconds, paramURL)
 		return res, errRod
 	} else if errRod != nil {
-		log.Errorf("Error while visiting %s", url)
+		log.Errorf("Error while visiting %s", paramURL)
 		return res, errRod
 	}
 
@@ -174,6 +178,23 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 		scraped.headers[lowerCaseKey] = append(scraped.headers[lowerCaseKey], value.String())
 	}
 
+	u, _ := url.Parse(paramURL)
+	scraped.dns = make(map[string][]string)
+	nsSlice, _ := net.LookupNS(u.Host)
+	for _, ns := range nsSlice {
+		scraped.dns["NS"] = append(scraped.dns["NS"], string(ns.Host))
+	}
+	mxSlice, _ := net.LookupMX(u.Host)
+	for _, mx := range mxSlice {
+		scraped.dns["MX"] = append(scraped.dns["MX"], string(mx.Host))
+	}
+	txtSlice, _ := net.LookupTXT(u.Host)
+	for _, txt := range txtSlice {
+		scraped.dns["TXT"] = append(scraped.dns["TXT"], txt)
+	}
+	cname, _ := net.LookupCNAME(u.Host)
+	scraped.dns["CNAME"] = append(scraped.dns["CNAME"], cname)
+
 	//TODO : headers and cookies could be parsed before load completed
 	errRod = rod.Try(func() {
 		page.
@@ -181,10 +202,10 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 			MustWaitLoad()
 	})
 	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while loading %s", wapp.PageLoadTimeoutSeconds, url)
+		log.Errorf("Timeout reached (%ds) while loading %s", wapp.PageLoadTimeoutSeconds, paramURL)
 		return res, errRod
 	} else if errRod != nil {
-		log.Errorf("Error while visiting %s", url)
+		log.Errorf("Error while visiting %s", paramURL)
 		return res, errRod
 	}
 
@@ -223,7 +244,7 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 		wg.Add(1)
 		go func(app *application) {
 			defer wg.Done()
-			analyzeURL(app, url, detectedApplications)
+			analyzeURL(app, paramURL, detectedApplications)
 			if app.Js != nil {
 				analyseJS(app, page, detectedApplications)
 			}
@@ -244,6 +265,9 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 			}
 			if len(scraped.meta) > 0 && app.Meta != nil {
 				analyzeMeta(app, scraped.meta, detectedApplications)
+			}
+			if len(scraped.dns) > 0 && app.DNS != nil {
+				analyseDNS(app, scraped.dns, detectedApplications)
 			}
 		}(app)
 	}
@@ -411,6 +435,24 @@ func analyseDom(app *application, page *rod.Page, detectedApplications *detected
 							version := detectVersion(pattrn, &value)
 							addApp(app, detectedApplications, version, pattrn.confidence)
 						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// analyseDNS tries to match dns records
+func analyseDNS(app *application, dns map[string][]string, detectedApplications *detected) {
+	patterns := parsePatterns(app.DNS)
+	for dnsType, v := range patterns {
+		dnsTypeUpperCase := strings.ToUpper(dnsType)
+		for _, pattrn := range v {
+			if dnsSlice, ok := dns[dnsTypeUpperCase]; ok {
+				for _, dns := range dnsSlice {
+					if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(dns)) {
+						version := detectVersion(pattrn, &dns)
+						addApp(app, detectedApplications, version, pattrn.confidence)
 					}
 				}
 			}
