@@ -179,20 +179,22 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 	}
 
 	u, _ := url.Parse(paramURL)
+	parts := strings.Split(u.Hostname(), ".")
+	domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
 	scraped.dns = make(map[string][]string)
-	nsSlice, _ := net.LookupNS(u.Host)
+	nsSlice, _ := net.LookupNS(domain)
 	for _, ns := range nsSlice {
 		scraped.dns["NS"] = append(scraped.dns["NS"], string(ns.Host))
 	}
-	mxSlice, _ := net.LookupMX(u.Host)
+	mxSlice, _ := net.LookupMX(domain)
 	for _, mx := range mxSlice {
 		scraped.dns["MX"] = append(scraped.dns["MX"], string(mx.Host))
 	}
-	txtSlice, _ := net.LookupTXT(u.Host)
+	txtSlice, _ := net.LookupTXT(domain)
 	for _, txt := range txtSlice {
 		scraped.dns["TXT"] = append(scraped.dns["TXT"], txt)
 	}
-	cname, _ := net.LookupCNAME(u.Host)
+	cname, _ := net.LookupCNAME(domain)
 	scraped.dns["CNAME"] = append(scraped.dns["CNAME"], cname)
 
 	//TODO : headers and cookies could be parsed before load completed
