@@ -23,9 +23,13 @@ import (
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 var wg sync.WaitGroup
 
+type scrapedURL struct {
+	url    string
+	status int
+}
+
 type scrapedData struct {
-	status  int
-	url     string
+	urls    []scrapedURL
 	html    string
 	headers map[string][]string
 	scripts []string
@@ -148,7 +152,7 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 
 	detectedApplications := &detected{new(sync.Mutex), make(map[string]*resultApp)}
 	scraped := &scrapedData{}
-	res := []map[string]interface{}{}
+	res := map[string][]interface{}{}
 
 	var e proto.NetworkResponseReceived
 	page := wapp.Browser.MustPage("")
@@ -170,8 +174,7 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 
 	wait()
 
-	scraped.status = e.Response.Status
-	scraped.url = e.Response.URL
+	scraped.urls = append(scraped.urls, scrapedURL{e.Response.URL, e.Response.Status})
 	scraped.headers = make(map[string][]string)
 	for header, value := range e.Response.Headers {
 		lowerCaseKey := strings.ToLower(header)
@@ -285,9 +288,12 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 		}
 	}
 
+	for _, scrapedURL := range scraped.urls {
+		res["urls"] = append(res["urls"], map[string]interface{}{"url": scrapedURL.url, "status": scrapedURL.status})
+	}
 	for _, app := range detectedApplications.Apps {
 		// log.Printf("URL: %-25s DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)
-		res = append(res, map[string]interface{}{"name": app.Name, "confidence": app.Confidence, "version": app.Version, "categories": app.Categories})
+		res["technologies"] = append(res["technologies"], map[string]interface{}{"name": app.Name, "confidence": app.Confidence, "version": app.Version, "categories": app.Categories})
 	}
 	if wapp.JSON {
 		j, err := json.Marshal(res)
