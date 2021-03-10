@@ -1,7 +1,6 @@
 package main
 
 import (
-	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,13 +10,12 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-//go:embed configs/apps.json
-var f embed.FS
-
 func main() {
 
 	var url string
+	var appsJSONPath string
 	flag.StringVar(&url, "url", "", "URL to analyse")
+	flag.StringVar(&appsJSONPath, "file", "", "Path to override default technologies.json file")
 	flag.Parse()
 
 	if len(url) == 0 {
@@ -27,7 +25,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	wapp, err := gowap.Init(f, false)
+	wapp, err := gowap.Init(appsJSONPath, false)
 	if err != nil {
 		log.Errorln(err)
 	}

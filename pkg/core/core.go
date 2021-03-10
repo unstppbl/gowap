@@ -5,8 +5,10 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,6 +24,9 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 var wg sync.WaitGroup
+
+//go:embed assets/technologies.json
+var f embed.FS
 
 type scrapedURL struct {
 	url    string
@@ -79,7 +84,7 @@ type Wappalyzer struct {
 }
 
 // Init initializes wappalyzer
-func Init(f embed.FS, JSON bool) (wapp *Wappalyzer, err error) {
+func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
 	wapp = &Wappalyzer{BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3}
 
 	errRod := rod.Try(func() {
@@ -98,11 +103,29 @@ func Init(f embed.FS, JSON bool) (wapp *Wappalyzer, err error) {
 
 	wapp.Browser.IgnoreCertErrors(true)
 
-	appsFile, err := f.ReadFile("configs/apps.json")
-	if err != nil {
-		log.Errorf("Couldn't open file at %s\n", "apps.json")
-		return nil, err
+	var appsFile []byte
+	if appsJSONPath != "" {
+		log.Infof("Trying to open technologies file at %s", appsJSONPath)
+		if _, err := os.Stat(appsJSONPath); err == nil {
+			appsFile, err = ioutil.ReadFile(appsJSONPath)
+			if err != nil {
+				log.Errorf("Couldn't open file at %s\n", appsJSONPath)
+			} else {
+				log.Infof("Technologies file opened")
+			}
+		} else {
+			log.Errorf("Couldn't find file at %s\n", appsJSONPath)
+		}
 	}
+	if appsJSONPath == "" || len(appsFile) == 0 {
+		log.Infof("Loading included asset technologies.json")
+		appsFile, err = f.ReadFile("assets/technologies.json")
+		if err != nil {
+			log.Errorf("Couldn't open included asset technologies.json\n")
+			return nil, err
+		}
+	}
+
 	temporary := &temp{}
 	err = json.Unmarshal(appsFile, &temporary)
 	if err != nil {

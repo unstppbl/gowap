@@ -2,11 +2,13 @@ package core
 
 import (
 	"testing"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func TestGowap(t *testing.T) {
-	/*url := "https://tengrinews.kz"
-	wapp, err := Init("./apps.json", false)
+	url := "https://tengrinews.kz"
+	wapp, err := Init("", false)
 	if err != nil {
 		log.Errorln(err)
 		t.FailNow()
@@ -21,5 +23,5 @@ func TestGowap(t *testing.T) {
 		log.Errorln(err)
 		t.FailNow()
 	}
-	log.Infof("[*] Result for %s:\n%s", url, string(prettyJSON))*/
+	log.Infof("[*] Result for %s:\n%s", url, string(prettyJSON))
 }
