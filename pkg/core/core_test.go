@@ -8,7 +8,9 @@ import (
 
 func TestGowap(t *testing.T) {
 	url := "https://tengrinews.kz"
-	wapp, err := Init("", false)
+	config := NewConfig()
+	config.JSON = false
+	wapp, err := Init(config)
 	if err != nil {
 		log.Errorln(err)
 		t.FailNow()

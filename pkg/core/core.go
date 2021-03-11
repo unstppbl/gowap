@@ -83,9 +83,23 @@ type Wappalyzer struct {
 	JSON                   bool
 }
 
+// Config for gowap
+type Config struct {
+	AppsJSONPath           string
+	BrowserTimeoutSeconds  int
+	NetworkTimeoutSeconds  int
+	PageLoadTimeoutSeconds int
+	JSON                   bool
+}
+
+// NewConfig struct with default values
+func NewConfig() *Config {
+	return &Config{AppsJSONPath: "", BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3, JSON: true}
+}
+
 // Init initializes wappalyzer
-func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
-	wapp = &Wappalyzer{BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3}
+func Init(config *Config) (wapp *Wappalyzer, err error) {
+	wapp = &Wappalyzer{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
 
 	errRod := rod.Try(func() {
 		wapp.Browser = rod.
@@ -104,20 +118,20 @@ func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
 	wapp.Browser.IgnoreCertErrors(true)
 
 	var appsFile []byte
-	if appsJSONPath != "" {
-		log.Infof("Trying to open technologies file at %s", appsJSONPath)
-		if _, err := os.Stat(appsJSONPath); err == nil {
-			appsFile, err = ioutil.ReadFile(appsJSONPath)
+	if config.AppsJSONPath != "" {
+		log.Infof("Trying to open technologies file at %s", config.AppsJSONPath)
+		if _, err := os.Stat(config.AppsJSONPath); err == nil {
+			appsFile, err = ioutil.ReadFile(config.AppsJSONPath)
 			if err != nil {
-				log.Errorf("Couldn't open file at %s\n", appsJSONPath)
+				log.Errorf("Couldn't open file at %s\n", config.AppsJSONPath)
 			} else {
 				log.Infof("Technologies file opened")
 			}
 		} else {
-			log.Errorf("Couldn't find file at %s\n", appsJSONPath)
+			log.Errorf("Couldn't find file at %s\n", config.AppsJSONPath)
 		}
 	}
-	if appsJSONPath == "" || len(appsFile) == 0 {
+	if config.AppsJSONPath == "" || len(appsFile) == 0 {
 		log.Infof("Loading included asset technologies.json")
 		appsFile, err = f.ReadFile("assets/technologies.json")
 		if err != nil {
@@ -152,7 +166,7 @@ func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
 		parseCategories(app, &wapp.Categories)
 		wapp.Apps[k] = app
 	}
-	wapp.JSON = JSON
+	wapp.JSON = config.JSON
 	return wapp, nil
 }
 
