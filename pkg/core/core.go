@@ -1,24 +1,20 @@
 package core
 
 import (
-	"context"
 	"embed"
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
-	"net/url"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
+	scraper "github.com/dranih/gowap/pkg/scraper"
+	"github.com/go-rod/rod"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/proto"
 	jsoniter "github.com/json-iterator/go"
 )
 
@@ -74,13 +70,10 @@ type category struct {
 
 // Wappalyzer implements analyze method as original wappalyzer does
 type Wappalyzer struct {
-	Browser                *rod.Browser
-	BrowserTimeoutSeconds  int
-	NetworkTimeoutSeconds  int
-	PageLoadTimeoutSeconds int
-	Apps                   map[string]*application
-	Categories             map[string]*category
-	JSON                   bool
+	Scraper    scraper.Scraper
+	Apps       map[string]*application
+	Categories map[string]*category
+	JSON       bool
 }
 
 // Config for gowap
@@ -99,23 +92,10 @@ func NewConfig() *Config {
 
 // Init initializes wappalyzer
 func Init(config *Config) (wapp *Wappalyzer, err error) {
-	wapp = &Wappalyzer{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
-
-	errRod := rod.Try(func() {
-		wapp.Browser = rod.
-			New().
-			Timeout(time.Duration(wapp.BrowserTimeoutSeconds) * time.Second).
-			MustConnect()
-	})
-	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while connecting Browser", wapp.BrowserTimeoutSeconds)
-		return wapp, errRod
-	} else if errRod != nil {
-		log.Errorf("Error while connecting Browser")
-		return wapp, errRod
-	}
-
-	wapp.Browser.IgnoreCertErrors(true)
+	wapp = &Wappalyzer{}
+	// TODO : option to select scraper
+	wapp.Scraper = &scraper.RodScraper{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
+	err = wapp.Scraper.Init()
 
 	var appsFile []byte
 	if config.AppsJSONPath != "" {
@@ -188,103 +168,12 @@ type detected struct {
 func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error) {
 
 	detectedApplications := &detected{new(sync.Mutex), make(map[string]*resultApp)}
-	scraped := &scrapedData{}
+	scraped, err := wapp.Scraper.Analyse(paramURL)
 	res := map[string][]interface{}{}
 
 	if !validateURL(paramURL) {
 		log.Errorf("URL not valid : %s", paramURL)
 		return res, errors.New("UrlNotValid")
-	}
-
-	var e proto.NetworkResponseReceived
-	page := wapp.Browser.MustPage("")
-	wait := page.WaitEvent(&e)
-	go page.MustHandleDialog()
-
-	errRod := rod.Try(func() {
-		page.
-			Timeout(time.Duration(wapp.NetworkTimeoutSeconds) * time.Second).
-			MustNavigate(paramURL)
-	})
-	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while visiting %s", wapp.NetworkTimeoutSeconds, paramURL)
-		return res, errRod
-	} else if errRod != nil {
-		log.Errorf("Error while visiting %s", paramURL)
-		return res, errRod
-	}
-
-	wait()
-
-	scraped.urls = append(scraped.urls, scrapedURL{e.Response.URL, e.Response.Status})
-	scraped.headers = make(map[string][]string)
-	for header, value := range e.Response.Headers {
-		lowerCaseKey := strings.ToLower(header)
-		scraped.headers[lowerCaseKey] = append(scraped.headers[lowerCaseKey], value.String())
-	}
-
-	u, _ := url.Parse(paramURL)
-	parts := strings.Split(u.Hostname(), ".")
-	domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
-	scraped.dns = make(map[string][]string)
-	nsSlice, _ := net.LookupNS(domain)
-	for _, ns := range nsSlice {
-		scraped.dns["NS"] = append(scraped.dns["NS"], string(ns.Host))
-	}
-	mxSlice, _ := net.LookupMX(domain)
-	for _, mx := range mxSlice {
-		scraped.dns["MX"] = append(scraped.dns["MX"], string(mx.Host))
-	}
-	txtSlice, _ := net.LookupTXT(domain)
-	for _, txt := range txtSlice {
-		scraped.dns["TXT"] = append(scraped.dns["TXT"], txt)
-	}
-	cname, _ := net.LookupCNAME(domain)
-	scraped.dns["CNAME"] = append(scraped.dns["CNAME"], cname)
-
-	//TODO : headers and cookies could be parsed before load completed
-	errRod = rod.Try(func() {
-		page.
-			Timeout(time.Duration(wapp.PageLoadTimeoutSeconds) * time.Second).
-			MustWaitLoad()
-	})
-	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while loading %s", wapp.PageLoadTimeoutSeconds, paramURL)
-		return res, errRod
-	} else if errRod != nil {
-		log.Errorf("Error while visiting %s", paramURL)
-		return res, errRod
-	}
-
-	scraped.html = page.MustHTML()
-
-	scripts, _ := page.Elements("script")
-	for _, script := range scripts {
-		if src, _ := script.Property("src"); src.Val() != nil {
-			scraped.scripts = append(scraped.scripts, src.String())
-		}
-	}
-
-	metas, _ := page.Elements("meta")
-	scraped.meta = make(map[string][]string)
-	for _, meta := range metas {
-		name, _ := meta.Property("name")
-		if name.Val() == nil {
-			name, _ = meta.Property("property")
-		}
-		if name.Val() != nil {
-			if content, _ := meta.Property("content"); content.Val() != nil {
-				nameLower := strings.ToLower(name.String())
-				scraped.meta[nameLower] = append(scraped.meta[nameLower], content.String())
-			}
-		}
-	}
-
-	scraped.cookies = make(map[string]string)
-	str := []string{}
-	cookies, _ := page.Cookies(str)
-	for _, cookie := range cookies {
-		scraped.cookies[cookie.Name] = cookie.Value
 	}
 
 	for _, app := range wapp.Apps {
@@ -293,28 +182,28 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 			defer wg.Done()
 			analyzeURL(app, paramURL, detectedApplications)
 			if app.Js != nil {
-				analyseJS(app, page, detectedApplications)
+				//analyseJS(app, page, detectedApplications)
 			}
 			if app.Dom != nil {
-				analyseDom(app, page, detectedApplications)
+				//analyseDom(app, page, detectedApplications)
 			}
 			if app.HTML != nil {
-				analyzeHTML(app, scraped.html, detectedApplications)
+				analyzeHTML(app, scraped.HTML, detectedApplications)
 			}
-			if len(scraped.headers) > 0 && app.Headers != nil {
-				analyzeHeaders(app, scraped.headers, detectedApplications)
+			if len(scraped.Headers) > 0 && app.Headers != nil {
+				analyzeHeaders(app, scraped.Headers, detectedApplications)
 			}
-			if len(scraped.cookies) > 0 && app.Cookies != nil {
-				analyzeCookies(app, scraped.cookies, detectedApplications)
+			if len(scraped.Cookies) > 0 && app.Cookies != nil {
+				analyzeCookies(app, scraped.Cookies, detectedApplications)
 			}
-			if len(scraped.scripts) > 0 && app.Scripts != nil {
-				analyzeScripts(app, scraped.scripts, detectedApplications)
+			if len(scraped.Scripts) > 0 && app.Scripts != nil {
+				analyzeScripts(app, scraped.Scripts, detectedApplications)
 			}
-			if len(scraped.meta) > 0 && app.Meta != nil {
-				analyzeMeta(app, scraped.meta, detectedApplications)
+			if len(scraped.Meta) > 0 && app.Meta != nil {
+				analyzeMeta(app, scraped.Meta, detectedApplications)
 			}
-			if len(scraped.dns) > 0 && app.DNS != nil {
-				analyseDNS(app, scraped.dns, detectedApplications)
+			if len(scraped.DNS) > 0 && app.DNS != nil {
+				analyseDNS(app, scraped.DNS, detectedApplications)
 			}
 		}(app)
 	}
@@ -330,8 +219,8 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 		}
 	}
 
-	for _, scrapedURL := range scraped.urls {
-		res["urls"] = append(res["urls"], map[string]interface{}{"url": scrapedURL.url, "status": scrapedURL.status})
+	for _, scrapedURL := range scraped.URLs {
+		res["urls"] = append(res["urls"], map[string]interface{}{"url": scrapedURL.URL, "status": scrapedURL.Status})
 	}
 	for _, app := range detectedApplications.Apps {
 		// log.Printf("URL: %-25s DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)

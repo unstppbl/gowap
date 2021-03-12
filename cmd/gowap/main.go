@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	gowap "github.com/bernardmendy/gowap/pkg/core"
+	gowap "github.com/dranih/gowap/pkg/core"
 	log "github.com/sirupsen/logrus"
 )
 
