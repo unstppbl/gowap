@@ -191,6 +191,11 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 	scraped := &scrapedData{}
 	res := map[string][]interface{}{}
 
+	if !validateURL(paramURL) {
+		log.Errorf("URL not valid : %s", paramURL)
+		return res, errors.New("UrlNotValid")
+	}
+
 	var e proto.NetworkResponseReceived
 	page := wapp.Browser.MustPage("")
 	wait := page.WaitEvent(&e)
@@ -653,4 +658,13 @@ func parseCategories(app *application, categoriesCatalog *map[string]*category) 
 	for _, categoryID := range app.Cats {
 		app.Categories = append(app.Categories, (*categoriesCatalog)[strconv.Itoa(categoryID)].Name)
 	}
+}
+
+func validateURL(url string) bool {
+	regex, err := regexp.Compile(`^(?:http(s)?:\/\/)?[\w.-]+(?:\.[\w\.-]+)+[\w\-\._~:/?#[\]@!\$&'\(\)\*\+,;=.]+$`)
+	ret := false
+	if err == nil {
+		ret = regex.MatchString(url)
+	}
+	return ret
 }

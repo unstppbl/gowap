@@ -18,9 +18,9 @@ func main() {
 	var browserTimeoutSeconds, networkTimeoutSeconds, pageLoadTimeoutSeconds int
 	var rawOutput bool
 	flag.StringVar(&appsJSONPath, "file", "", "Path to override default technologies.json file")
-	flag.IntVar(&browserTimeoutSeconds, "bwtimeout", 4, "Timeout in seconds for browser")
-	flag.IntVar(&networkTimeoutSeconds, "nttimeout", 3, "Timeout in seconds for the network connection to the url")
-	flag.IntVar(&pageLoadTimeoutSeconds, "pgtimeout", 3, "Timeout in seconds for the page loading by the browser")
+	flag.IntVar(&browserTimeoutSeconds, "timeout", 4, "Global timeout in seconds (network + page loading)")
+	flag.IntVar(&networkTimeoutSeconds, "nttimeout", 2, "Timeout in seconds for the network connection to the url")
+	flag.IntVar(&pageLoadTimeoutSeconds, "pgtimeout", 2, "Timeout in seconds for the page loading by the browser")
 	flag.BoolVar(&rawOutput, "raw", false, "Raw output (JSON by default)")
 	flag.BoolVar(&help, "h", false, "Help")
 	flag.Parse()
