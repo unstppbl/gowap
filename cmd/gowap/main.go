@@ -12,12 +12,11 @@ import (
 
 func main() {
 
-	var url string
-	var appsJSONPath string
-	var help bool
+	var url, appsJSONPath, scraper string
+	var help, rawOutput bool
 	var browserTimeoutSeconds, networkTimeoutSeconds, pageLoadTimeoutSeconds int
-	var rawOutput bool
 	flag.StringVar(&appsJSONPath, "file", "", "Path to override default technologies.json file")
+	flag.StringVar(&scraper, "scraper", "rod", "Choose scraper between rod (default) and colly")
 	flag.IntVar(&browserTimeoutSeconds, "timeout", 4, "Global timeout in seconds (network + page loading)")
 	flag.IntVar(&networkTimeoutSeconds, "nttimeout", 2, "Timeout in seconds for the network connection to the url")
 	flag.IntVar(&pageLoadTimeoutSeconds, "pgtimeout", 2, "Timeout in seconds for the page loading by the browser")
@@ -45,6 +44,11 @@ func main() {
 	} else {
 		url = flag.Arg(0)
 	}
+	if scraper != "rod" && scraper != "colly" {
+		fmt.Printf("Unknown scraper %s : only supporting rod and colly", scraper)
+		Usage()
+		os.Exit(1)
+	}
 
 	config := gowap.NewConfig()
 	config.AppsJSONPath = appsJSONPath
@@ -52,6 +56,7 @@ func main() {
 	config.BrowserTimeoutSeconds = browserTimeoutSeconds
 	config.NetworkTimeoutSeconds = networkTimeoutSeconds
 	config.PageLoadTimeoutSeconds = pageLoadTimeoutSeconds
+	config.Scraper = scraper
 
 	wapp, err := gowap.Init(config)
 	if err != nil {

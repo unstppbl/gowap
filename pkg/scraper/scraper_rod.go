@@ -16,9 +16,14 @@ import (
 
 type RodScraper struct {
 	Browser                *rod.Browser
+	Page                   *rod.Page
 	BrowserTimeoutSeconds  int
 	NetworkTimeoutSeconds  int
 	PageLoadTimeoutSeconds int
+}
+
+func (s *RodScraper) CanRenderPage() bool {
+	return true
 }
 
 func (s *RodScraper) Init() error {
@@ -40,17 +45,17 @@ func (s *RodScraper) Init() error {
 	return nil
 }
 
-func (s *RodScraper) Analyse(paramURL string) (*ScrapedData, error) {
+func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 
 	scraped := &ScrapedData{}
 
 	var e proto.NetworkResponseReceived
-	page := s.Browser.MustPage("")
-	wait := page.WaitEvent(&e)
-	go page.MustHandleDialog()
+	s.Page = s.Browser.MustPage("")
+	wait := s.Page.WaitEvent(&e)
+	go s.Page.MustHandleDialog()
 
 	errRod := rod.Try(func() {
-		page.
+		s.Page.
 			Timeout(time.Duration(s.NetworkTimeoutSeconds) * time.Second).
 			MustNavigate(paramURL)
 	})
@@ -92,7 +97,7 @@ func (s *RodScraper) Analyse(paramURL string) (*ScrapedData, error) {
 
 	//TODO : headers and cookies could be parsed before load completed
 	errRod = rod.Try(func() {
-		page.
+		s.Page.
 			Timeout(time.Duration(s.PageLoadTimeoutSeconds) * time.Second).
 			MustWaitLoad()
 	})
@@ -104,16 +109,16 @@ func (s *RodScraper) Analyse(paramURL string) (*ScrapedData, error) {
 		return scraped, errRod
 	}
 
-	scraped.HTML = page.MustHTML()
+	scraped.HTML = s.Page.MustHTML()
 
-	scripts, _ := page.Elements("script")
+	scripts, _ := s.Page.Elements("script")
 	for _, script := range scripts {
 		if src, _ := script.Property("src"); src.Val() != nil {
 			scraped.Scripts = append(scraped.Scripts, src.String())
 		}
 	}
 
-	metas, _ := page.Elements("meta")
+	metas, _ := s.Page.Elements("meta")
 	scraped.Meta = make(map[string][]string)
 	for _, meta := range metas {
 		name, _ := meta.Property("name")
@@ -130,10 +135,27 @@ func (s *RodScraper) Analyse(paramURL string) (*ScrapedData, error) {
 
 	scraped.Cookies = make(map[string]string)
 	str := []string{}
-	cookies, _ := page.Cookies(str)
+	cookies, _ := s.Page.Cookies(str)
 	for _, cookie := range cookies {
 		scraped.Cookies[cookie.Name] = cookie.Value
 	}
 
 	return scraped, nil
+}
+
+func (s *RodScraper) EvalJS(jsProp string) (*string, error) {
+	res, err := s.Page.Eval(jsProp)
+	if err == nil && res != nil && res.Value.Val() != nil {
+		value := ""
+		if res.Type == "string" || res.Type == "number" {
+			value = res.Value.String()
+		}
+		return &value, err
+	} else {
+		return nil, err
+	}
+}
+
+func (s *RodScraper) SearchDom(domSelector string) (*string, error) {
+	return nil, nil
 }

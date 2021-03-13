@@ -83,18 +83,28 @@ type Config struct {
 	NetworkTimeoutSeconds  int
 	PageLoadTimeoutSeconds int
 	JSON                   bool
+	Scraper                string
 }
 
 // NewConfig struct with default values
 func NewConfig() *Config {
-	return &Config{AppsJSONPath: "", BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3, JSON: true}
+	return &Config{AppsJSONPath: "", BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3, JSON: true, Scraper: "rod"}
 }
 
 // Init initializes wappalyzer
 func Init(config *Config) (wapp *Wappalyzer, err error) {
 	wapp = &Wappalyzer{}
-	// TODO : option to select scraper
-	wapp.Scraper = &scraper.RodScraper{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
+	// Selecting scraper
+	switch config.Scraper {
+	case "colly":
+		wapp.Scraper = &scraper.CollyScraper{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
+	case "rod":
+		wapp.Scraper = &scraper.RodScraper{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
+	default:
+		log.Errorf("Unknown scraper %s", config.Scraper)
+		return wapp, errors.New("UnknownScraper")
+	}
+
 	err = wapp.Scraper.Init()
 
 	var appsFile []byte
@@ -168,7 +178,7 @@ type detected struct {
 func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error) {
 
 	detectedApplications := &detected{new(sync.Mutex), make(map[string]*resultApp)}
-	scraped, err := wapp.Scraper.Analyse(paramURL)
+	scraped, err := wapp.Scraper.Scrape(paramURL)
 	res := map[string][]interface{}{}
 
 	if !validateURL(paramURL) {
@@ -176,15 +186,17 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 		return res, errors.New("UrlNotValid")
 	}
 
+	canRenderPage := wapp.Scraper.CanRenderPage()
+
 	for _, app := range wapp.Apps {
 		wg.Add(1)
 		go func(app *application) {
 			defer wg.Done()
 			analyzeURL(app, paramURL, detectedApplications)
-			if app.Js != nil {
-				//analyseJS(app, page, detectedApplications)
+			if canRenderPage && app.Js != nil {
+				analyseJS(app, wapp.Scraper, detectedApplications)
 			}
-			if app.Dom != nil {
+			if canRenderPage && app.Dom != nil {
 				//analyseDom(app, page, detectedApplications)
 			}
 			if app.HTML != nil {
@@ -327,18 +339,14 @@ func analyzeMeta(app *application, metas map[string][]string, detectedApplicatio
 }
 
 // analyseJS evals the JS properties and tries to match
-func analyseJS(app *application, page *rod.Page, detectedApplications *detected) {
+func analyseJS(app *application, scraper scraper.Scraper, detectedApplications *detected) {
 	patterns := parsePatterns(app.Js)
 	for jsProp, v := range patterns {
-		res, err := page.Eval(jsProp)
-		if err == nil && res != nil && res.Value.Val() != nil {
-			value := ""
-			if res.Type == "string" || res.Type == "number" {
-				value = res.Value.String()
-			}
+		value, err := scraper.EvalJS(jsProp)
+		if err == nil && value != nil {
 			for _, pattrn := range v {
-				if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
-					version := detectVersion(pattrn, &value)
+				if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(*value)) {
+					version := detectVersion(pattrn, value)
 					addApp(app, detectedApplications, version, pattrn.confidence)
 				}
 			}

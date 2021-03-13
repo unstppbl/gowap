@@ -54,6 +54,33 @@ func TestLoadingTimeout(t *testing.T) {
 	}
 }
 
+func TestColly(t *testing.T) {
+	ts := MockHTTP(`<html><head><script src="jquery-3.5.1.min.js"></script></head></html>`)
+	defer ts.Close()
+	config := NewConfig()
+	config.Scraper = "colly"
+	wapp, err := Init(config)
+	res, err := wapp.Analyze(ts.URL)
+	if err != nil {
+		log.Errorln(err)
+		t.FailNow()
+	}
+	log.Println(res)
+}
+
+func TestJSEval(t *testing.T) {
+	ts := MockHTTP(`<html><head><script>jQuery=[];jQuery.fn=[];jQuery.fn.jquery="1.11.3"</script></head></html>`)
+	defer ts.Close()
+	config := NewConfig()
+	wapp, err := Init(config)
+	res, err := wapp.Analyze(ts.URL)
+	if err != nil {
+		log.Errorln(err)
+		t.FailNow()
+	}
+	log.Println(res)
+}
+
 func MockHTTP(content string) *httptest.Server {
 	ts := httptest.NewServer(
 		http.HandlerFunc(
