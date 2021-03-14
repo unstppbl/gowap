@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/PuerkitoBio/goquery"
 	scraper "github.com/dranih/gowap/pkg/scraper"
-	"github.com/go-rod/rod"
 	log "github.com/sirupsen/logrus"
 
 	jsoniter "github.com/json-iterator/go"
@@ -27,16 +27,6 @@ var f embed.FS
 type scrapedURL struct {
 	url    string
 	status int
-}
-
-type scrapedData struct {
-	urls    []scrapedURL
-	html    string
-	headers map[string][]string
-	scripts []string
-	cookies map[string]string
-	meta    map[string][]string
-	dns     map[string][]string
 }
 
 type temp struct {
@@ -197,7 +187,7 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 				analyseJS(app, wapp.Scraper, detectedApplications)
 			}
 			if canRenderPage && app.Dom != nil {
-				//analyseDom(app, page, detectedApplications)
+				analyseDom(app, scraped.HTML, detectedApplications)
 			}
 			if app.HTML != nil {
 				analyzeHTML(app, scraped.HTML, detectedApplications)
@@ -355,12 +345,14 @@ func analyseJS(app *application, scraper scraper.Scraper, detectedApplications *
 }
 
 // analyseDom evals the DOM tries to match
-func analyseDom(app *application, page *rod.Page, detectedApplications *detected) {
+func analyseDom(app *application, html string, detectedApplications *detected) {
+	reader := strings.NewReader(html)
+	doc, err := goquery.NewDocumentFromReader(reader)
+	if err != nil {
+		log.Fatal(err)
+	}
 	for domSelector, v1 := range app.Dom {
-		//BUG : page.Element hangs, using page.Elements and take first el
-		res, err := page.Elements(domSelector)
-		resFirst := res.First()
-		if err == nil && resFirst != nil {
+		doc.Find(domSelector).First().Each(func(i int, s *goquery.Selection) {
 			for domType, v := range v1 {
 				patterns := parsePatterns(v)
 				for attribute, pattrns := range patterns {
@@ -368,15 +360,12 @@ func analyseDom(app *application, page *rod.Page, detectedApplications *detected
 						value := ""
 						switch domType {
 						case "text":
-							value, _ = resFirst.Text()
+							value = s.Text()
 						case "properties":
-							if attr, err := resFirst.Property(attribute); err == nil && attr.Val() != nil {
-								value = attr.String()
-							}
+							// Not implemented, should be done into the browser to get element properties
+							value, _ = s.Attr(attribute)
 						case "attributes":
-							if attr, err := resFirst.Attribute(attribute); err == nil && attr != nil {
-								value = *attr
-							}
+							value, _ = s.Attr(attribute)
 						}
 						if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
 							version := detectVersion(pattrn, &value)
@@ -385,7 +374,7 @@ func analyseDom(app *application, page *rod.Page, detectedApplications *detected
 					}
 				}
 			}
-		}
+		})
 	}
 }
 

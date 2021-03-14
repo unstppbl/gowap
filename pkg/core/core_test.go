@@ -81,6 +81,19 @@ func TestJSEval(t *testing.T) {
 	log.Println(res)
 }
 
+func TestDomSearch(t *testing.T) {
+	ts := MockHTTP(`<html><head><body><a href='https://amzn.to'>Link<a/><div id='jira'></div></body></head></html>`)
+	defer ts.Close()
+	config := NewConfig()
+	wapp, err := Init(config)
+	res, err := wapp.Analyze(ts.URL)
+	if err != nil {
+		log.Errorln(err)
+		t.FailNow()
+	}
+	log.Println(res)
+}
+
 func MockHTTP(content string) *httptest.Server {
 	ts := httptest.NewServer(
 		http.HandlerFunc(

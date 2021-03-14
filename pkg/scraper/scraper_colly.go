@@ -91,7 +91,3 @@ func (s *CollyScraper) Scrape(paramURL string) (*ScrapedData, error) {
 func (s *CollyScraper) EvalJS(jsProp string) (*string, error) {
 	return nil, errors.New("NotImplemented")
 }
-
-func (s *CollyScraper) SearchDom(domSelector string) (*string, error) {
-	return nil, nil
-}

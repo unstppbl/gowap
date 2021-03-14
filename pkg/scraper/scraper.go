@@ -21,5 +21,4 @@ type Scraper interface {
 	CanRenderPage() bool
 	Scrape(paramURL string) (*ScrapedData, error)
 	EvalJS(jsProp string) (*string, error)
-	SearchDom(domSelector string) (*string, error)
 }

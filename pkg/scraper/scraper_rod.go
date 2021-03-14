@@ -155,7 +155,3 @@ func (s *RodScraper) EvalJS(jsProp string) (*string, error) {
 		return nil, err
 	}
 }
-
-func (s *RodScraper) SearchDom(domSelector string) (*string, error) {
-	return nil, nil
-}
