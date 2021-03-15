@@ -24,11 +24,6 @@ var wg sync.WaitGroup
 //go:embed assets/technologies.json
 var f embed.FS
 
-type scrapedURL struct {
-	url    string
-	status int
-}
-
 type temp struct {
 	Apps       map[string]*jsoniter.RawMessage `json:"technologies"`
 	Categories map[string]*jsoniter.RawMessage `json:"categories"`
@@ -103,12 +98,12 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 		if _, err := os.Stat(config.AppsJSONPath); err == nil {
 			appsFile, err = ioutil.ReadFile(config.AppsJSONPath)
 			if err != nil {
-				log.Errorf("Couldn't open file at %s\n", config.AppsJSONPath)
+				log.Warningf("Couldn't open file at %s\n", config.AppsJSONPath)
 			} else {
 				log.Infof("Technologies file opened")
 			}
 		} else {
-			log.Errorf("Couldn't find file at %s\n", config.AppsJSONPath)
+			log.Warningf("Couldn't find file at %s\n", config.AppsJSONPath)
 		}
 	}
 	if config.AppsJSONPath == "" || len(appsFile) == 0 {
@@ -151,12 +146,16 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 }
 
 type resultApp struct {
+	technology technology
+	excludes   interface{}
+	implies    interface{}
+}
+
+type technology struct {
 	Name       string   `json:"name,ompitempty"`
 	Version    string   `json:"version"`
 	Categories []string `json:"categories,omitempty"`
 	Confidence int      `json:"confidence"`
-	excludes   interface{}
-	implies    interface{}
 }
 
 type detected struct {
@@ -164,12 +163,17 @@ type detected struct {
 	Apps map[string]*resultApp
 }
 
+type output struct {
+	URLs         []scraper.ScrapedURL `json:"urls,omitempty"`
+	Technologies []technology         `json:"technologies,omitempty"`
+}
+
 // Analyze retrieves application stack used on the provided web-site
 func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error) {
 
 	detectedApplications := &detected{new(sync.Mutex), make(map[string]*resultApp)}
 	scraped, err := wapp.Scraper.Scrape(paramURL)
-	res := map[string][]interface{}{}
+	res := &output{}
 
 	if !validateURL(paramURL) {
 		log.Errorf("URL not valid : %s", paramURL)
@@ -222,11 +226,11 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 	}
 
 	for _, scrapedURL := range scraped.URLs {
-		res["urls"] = append(res["urls"], map[string]interface{}{"url": scrapedURL.URL, "status": scrapedURL.Status})
+		res.URLs = append(res.URLs, scrapedURL)
 	}
 	for _, app := range detectedApplications.Apps {
 		// log.Printf("URL: %-25s DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)
-		res["technologies"] = append(res["technologies"], map[string]interface{}{"name": app.Name, "confidence": app.Confidence, "version": app.Version, "categories": app.Categories})
+		res.Technologies = append(res.Technologies, app.technology)
 	}
 	if wapp.JSON {
 		j, err := json.Marshal(res)
@@ -357,17 +361,18 @@ func analyseDom(app *application, html string, detectedApplications *detected) {
 				patterns := parsePatterns(v)
 				for attribute, pattrns := range patterns {
 					for _, pattrn := range pattrns {
-						value := ""
+						var value string
+						var exists bool
 						switch domType {
 						case "text":
 							value = s.Text()
+							exists = true
 						case "properties":
 							// Not implemented, should be done into the browser to get element properties
-							value, _ = s.Attr(attribute)
 						case "attributes":
-							value, _ = s.Attr(attribute)
+							value, exists = s.Attr(attribute)
 						}
-						if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
+						if exists && pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
 							version := detectVersion(pattrn, &value)
 							addApp(app, detectedApplications, version, pattrn.confidence)
 						}
@@ -401,14 +406,14 @@ func analyseDNS(app *application, dns map[string][]string, detectedApplications 
 func addApp(app *application, detectedApplications *detected, version string, confidence int) {
 	detectedApplications.Mu.Lock()
 	if _, ok := (*detectedApplications).Apps[app.Name]; !ok {
-		resApp := &resultApp{app.Name, version, app.Categories, confidence, app.Excludes, app.Implies}
-		(*detectedApplications).Apps[resApp.Name] = resApp
+		resApp := &resultApp{technology{app.Name, version, app.Categories, confidence}, app.Excludes, app.Implies}
+		(*detectedApplications).Apps[resApp.technology.Name] = resApp
 	} else {
-		if (*detectedApplications).Apps[app.Name].Version == "" {
-			(*detectedApplications).Apps[app.Name].Version = version
+		if (*detectedApplications).Apps[app.Name].technology.Version == "" {
+			(*detectedApplications).Apps[app.Name].technology.Version = version
 		}
-		if confidence > (*detectedApplications).Apps[app.Name].Confidence {
-			(*detectedApplications).Apps[app.Name].Confidence = confidence
+		if confidence > (*detectedApplications).Apps[app.Name].technology.Confidence {
+			(*detectedApplications).Apps[app.Name].technology.Confidence = confidence
 		}
 	}
 	detectedApplications.Mu.Unlock()
@@ -530,7 +535,7 @@ func resolveImplies(apps *map[string]*application, detected *map[string]*resultA
 		for _, implied := range v {
 			app, ok := (*apps)[implied.str]
 			if _, ok2 := (*detected)[implied.str]; ok && !ok2 {
-				resApp := &resultApp{app.Name, implied.version, app.Categories, implied.confidence, app.Excludes, app.Implies}
+				resApp := &resultApp{technology{app.Name, implied.version, app.Categories, implied.confidence}, app.Excludes, app.Implies}
 				(*detected)[implied.str] = resApp
 				if app.Implies != nil {
 					resolveImplies(apps, detected, app.Implies)

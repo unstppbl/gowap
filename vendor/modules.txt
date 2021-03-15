@@ -11,6 +11,8 @@ github.com/antchfx/htmlquery
 github.com/antchfx/xmlquery
 # github.com/antchfx/xpath v1.1.10
 github.com/antchfx/xpath
+# github.com/davecgh/go-spew v1.1.1
+github.com/davecgh/go-spew/spew
 # github.com/go-rod/rod v0.94.1
 ## explicit
 github.com/go-rod/rod
@@ -55,12 +57,17 @@ github.com/konsorten/go-windows-terminal-sequences
 github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742
 github.com/modern-go/reflect2
+# github.com/pmezard/go-difflib v1.0.0
+github.com/pmezard/go-difflib/difflib
 # github.com/saintfish/chardet v0.0.0-20120816061221-3af4cd4741ca
 ## explicit
 github.com/saintfish/chardet
 # github.com/sirupsen/logrus v1.4.2
 ## explicit
 github.com/sirupsen/logrus
+# github.com/stretchr/testify v1.3.0
+## explicit
+github.com/stretchr/testify/assert
 # github.com/temoto/robotstxt v1.1.1
 ## explicit
 github.com/temoto/robotstxt

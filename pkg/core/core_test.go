@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGowap(t *testing.T) {
@@ -65,11 +66,25 @@ func TestColly(t *testing.T) {
 		log.Errorln(err)
 		t.FailNow()
 	}
-	log.Println(res)
+	var output output
+	err = json.UnmarshalFromString(res.(string), &output)
+	if err != nil {
+		log.Errorln(err)
+		t.FailNow()
+	}
+
+	//We should have jquery in the output
+	var expected technology
+	for _, v := range output.Technologies {
+		if v.Name == "jQuery" {
+			expected = v
+		}
+	}
+	assert.Equal(t, "3.5.1", expected.Version, "We should find jQuery version 3.5.1")
 }
 
 func TestJSEval(t *testing.T) {
-	ts := MockHTTP(`<html><head><script>jQuery=[];jQuery.fn=[];jQuery.fn.jquery="1.11.3"</script></head></html>`)
+	ts := MockHTTP(`<html><head></head><script>jQuery=[];jQuery.fn=[];jQuery.fn.jquery="1.11.3"</script></html>`)
 	defer ts.Close()
 	config := NewConfig()
 	wapp, err := Init(config)
@@ -82,7 +97,7 @@ func TestJSEval(t *testing.T) {
 }
 
 func TestDomSearch(t *testing.T) {
-	ts := MockHTTP(`<html><head><body><a href='https://amzn.to'>Link<a/><div id='jira'></div></body></head></html>`)
+	ts := MockHTTP(`<html><head></head><body><a href='https://amzn.to'>Link<a/><div id='jira'></div></body></html>`)
 	defer ts.Close()
 	config := NewConfig()
 	wapp, err := Init(config)
@@ -92,6 +107,108 @@ func TestDomSearch(t *testing.T) {
 		t.FailNow()
 	}
 	log.Println(res)
+}
+
+func TestLoadExternalTechnologiesJSON(t *testing.T) {
+	config := NewConfig()
+	config.AppsJSONPath = "assets/technologies.json"
+	_, err := Init(config)
+	assert.NoError(t, err, "External JSON technologies file should open")
+
+	config.AppsJSONPath = "assets/nofile.json"
+	_, err = Init(config)
+	assert.NoError(t, err, "Should load internal JSON if file not present")
+}
+
+func TestImpliesExcludes(t *testing.T) {
+	ts := MockHTTP(`<html><head></head><body><script>Drupal="test"; Backdrop="test";</script><div></div></body></html>`)
+	defer ts.Close()
+	config := NewConfig()
+	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
+	res, err := wapp.Analyze(ts.URL)
+	assert.NoError(t, err, "GoWap Analyze error")
+	var output output
+	err = json.UnmarshalFromString(res.(string), &output)
+	assert.NoError(t, err, "Unmarshal error")
+
+	var found bool
+	for _, v := range output.Technologies {
+		assert.NotEqual(t, "AngularDart", v.Name, "Backdrop should exclude Drupal")
+		if v.Name == "PHP" {
+			found = true
+		}
+	}
+	assert.True(t, found, "Backdrop should imply PHP")
+}
+
+func TestMeta(t *testing.T) {
+	ts := MockHTTP(`<html><head><meta name="generator" content="TiddlyWiki" /></head><body><div></div></body></html>`)
+	defer ts.Close()
+	config := NewConfig()
+	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
+	res, err := wapp.Analyze(ts.URL)
+	assert.NoError(t, err, "GoWap Analyze error")
+	var output output
+	err = json.UnmarshalFromString(res.(string), &output)
+	assert.NoError(t, err, "Unmarshal error")
+
+	var found bool
+	for _, v := range output.Technologies {
+		if v.Name == "TiddlyWiki" {
+			found = true
+		}
+	}
+	assert.True(t, found, "TiddlyWiki should be find in meta")
+}
+
+func TestUrl(t *testing.T) {
+	config := NewConfig()
+	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
+	res, err := wapp.Analyze("https://twitter.github.io/")
+	assert.NoError(t, err, "GoWap Analyze error")
+	var output output
+	err = json.UnmarshalFromString(res.(string), &output)
+	assert.NoError(t, err, "Unmarshal error")
+
+	var found bool
+	for _, v := range output.Technologies {
+		if v.Name == "GitHub Pages" {
+			found = true
+		}
+	}
+	assert.True(t, found, "GitHub Pages should be find in URL")
+}
+
+func TestHTML(t *testing.T) {
+	ts := MockHTTP(`<html><head><title>RoundCube</title></head><body><div></div></body></html>`)
+	defer ts.Close()
+	config := NewConfig()
+	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
+	res, err := wapp.Analyze(ts.URL)
+	assert.NoError(t, err, "GoWap Analyze error")
+	var output output
+	err = json.UnmarshalFromString(res.(string), &output)
+	assert.NoError(t, err, "Unmarshal error")
+
+	var found bool
+	for _, v := range output.Technologies {
+		if v.Name == "RoundCube" {
+			found = true
+		}
+	}
+	assert.True(t, found, "RoundCube should be find in HTML")
+}
+
+func TestUnkownScraper(t *testing.T) {
+	config := NewConfig()
+	config.Scraper = "Unknown"
+	_, err := Init(config)
+	log.Printf("%v", err)
+	assert.Error(t, err, "Should throw an error")
 }
 
 func MockHTTP(content string) *httptest.Server {
