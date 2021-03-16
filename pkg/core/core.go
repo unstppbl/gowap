@@ -24,10 +24,26 @@ var wg sync.WaitGroup
 //go:embed assets/technologies.json
 var f embed.FS
 
+// Config for gowap
+type Config struct {
+	AppsJSONPath           string
+	BrowserTimeoutSeconds  int
+	NetworkTimeoutSeconds  int
+	PageLoadTimeoutSeconds int
+	JSON                   bool
+	Scraper                string
+}
+
+// NewConfig struct with default values
+func NewConfig() *Config {
+	return &Config{AppsJSONPath: "", BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3, JSON: true, Scraper: "rod"}
+}
+
 type temp struct {
 	Apps       map[string]*jsoniter.RawMessage `json:"technologies"`
 	Categories map[string]*jsoniter.RawMessage `json:"categories"`
 }
+
 type application struct {
 	Name       string   `json:"name,ompitempty"`
 	Version    string   `json:"version"`
@@ -59,21 +75,6 @@ type Wappalyzer struct {
 	Apps       map[string]*application
 	Categories map[string]*category
 	JSON       bool
-}
-
-// Config for gowap
-type Config struct {
-	AppsJSONPath           string
-	BrowserTimeoutSeconds  int
-	NetworkTimeoutSeconds  int
-	PageLoadTimeoutSeconds int
-	JSON                   bool
-	Scraper                string
-}
-
-// NewConfig struct with default values
-func NewConfig() *Config {
-	return &Config{AppsJSONPath: "", BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3, JSON: true, Scraper: "rod"}
 }
 
 // Init initializes wappalyzer
@@ -115,11 +116,17 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 		}
 	}
 
+	err = parseTechnologiesFile(&appsFile, wapp)
+	wapp.JSON = config.JSON
+	return wapp, err
+}
+
+func parseTechnologiesFile(appsFile *[]byte, wapp *Wappalyzer) error {
 	temporary := &temp{}
-	err = json.Unmarshal(appsFile, &temporary)
+	err := json.Unmarshal(*appsFile, &temporary)
 	if err != nil {
 		log.Errorf("Couldn't unmarshal apps.json file: %s\n", err)
-		return nil, err
+		return err
 	}
 	wapp.Apps = make(map[string]*application)
 	wapp.Categories = make(map[string]*category)
@@ -127,22 +134,29 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 		catg := &category{}
 		if err = json.Unmarshal(*v, catg); err != nil {
 			log.Errorf("[!] Couldn't unmarshal Categories: %s\n", err)
-			return nil, err
+			return err
 		}
 		wapp.Categories[k] = catg
+	}
+	if len(wapp.Categories) < 1 {
+		log.Errorf("Couldn't find categories in technologies file")
+		return errors.New("NoCategoryFound")
 	}
 	for k, v := range temporary.Apps {
 		app := &application{}
 		app.Name = k
 		if err = json.Unmarshal(*v, app); err != nil {
 			log.Errorf("Couldn't unmarshal Apps: %s\n", err)
-			return nil, err
+			return err
 		}
 		parseCategories(app, &wapp.Categories)
 		wapp.Apps[k] = app
 	}
-	wapp.JSON = config.JSON
-	return wapp, nil
+	if len(wapp.Apps) < 1 {
+		log.Errorf("Couldn't find technologies in technologies file")
+		return errors.New("NoTechnologyFound")
+	}
+	return err
 }
 
 type resultApp struct {
@@ -233,11 +247,7 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 		res.Technologies = append(res.Technologies, app.technology)
 	}
 	if wapp.JSON {
-		j, err := json.Marshal(res)
-		if err != nil {
-			return nil, err
-		}
-		return string(j), nil
+		return json.MarshalToString(res)
 	}
 	return res, nil
 }
@@ -352,34 +362,33 @@ func analyseJS(app *application, scraper scraper.Scraper, detectedApplications *
 func analyseDom(app *application, html string, detectedApplications *detected) {
 	reader := strings.NewReader(html)
 	doc, err := goquery.NewDocumentFromReader(reader)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for domSelector, v1 := range app.Dom {
-		doc.Find(domSelector).First().Each(func(i int, s *goquery.Selection) {
-			for domType, v := range v1 {
-				patterns := parsePatterns(v)
-				for attribute, pattrns := range patterns {
-					for _, pattrn := range pattrns {
-						var value string
-						var exists bool
-						switch domType {
-						case "text":
-							value = s.Text()
-							exists = true
-						case "properties":
-							// Not implemented, should be done into the browser to get element properties
-						case "attributes":
-							value, exists = s.Attr(attribute)
-						}
-						if exists && pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
-							version := detectVersion(pattrn, &value)
-							addApp(app, detectedApplications, version, pattrn.confidence)
+	if err == nil {
+		for domSelector, v1 := range app.Dom {
+			doc.Find(domSelector).First().Each(func(i int, s *goquery.Selection) {
+				for domType, v := range v1 {
+					patterns := parsePatterns(v)
+					for attribute, pattrns := range patterns {
+						for _, pattrn := range pattrns {
+							var value string
+							var exists bool
+							switch domType {
+							case "text":
+								value = s.Text()
+								exists = true
+							case "properties":
+								// Not implemented, should be done into the browser to get element properties
+							case "attributes":
+								value, exists = s.Attr(attribute)
+							}
+							if exists && pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
+								version := detectVersion(pattrn, &value)
+								addApp(app, detectedApplications, version, pattrn.confidence)
+							}
 						}
 					}
 				}
-			}
-		})
+			})
+		}
 	}
 }
 

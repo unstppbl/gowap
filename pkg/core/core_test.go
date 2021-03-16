@@ -120,6 +120,26 @@ func TestLoadExternalTechnologiesJSON(t *testing.T) {
 	assert.NoError(t, err, "Should load internal JSON if file not present")
 }
 
+func TestTechnologiesFileParsing(t *testing.T) {
+	config := NewConfig()
+	wapp, err := Init(config)
+	unmarshalError := []byte(`{"this":"is","notgood"}`)
+	err = parseTechnologiesFile(&unmarshalError, wapp)
+	assert.Error(t, err, "Unmarshalling should throw an error")
+	unmarshalCategoriesError := []byte(`{"categories":{"is":"notgood"}}`)
+	err = parseTechnologiesFile(&unmarshalCategoriesError, wapp)
+	assert.Error(t, err, "Unmarshalling Categories should throw an error")
+	unmarshalAppsError := []byte(`{"categories":{"1":{"name":"CMS","priority":1}},"technologies":{"is":"notgood"}}`)
+	err = parseTechnologiesFile(&unmarshalAppsError, wapp)
+	assert.Error(t, err, "Unmarshalling Apps should throw an error")
+	noCategoryFound := []byte(`{"this":"isgood"}`)
+	err = parseTechnologiesFile(&noCategoryFound, wapp)
+	assert.Error(t, err, "Should throw an error NoCategoryFound")
+	noTechnologyFound := []byte(`{"categories":{"1":{"name":"CMS","priority":1}},"this":"isgood"}`)
+	err = parseTechnologiesFile(&noTechnologyFound, wapp)
+	assert.Error(t, err, "Should throw an error NoTechnologyFound")
+}
+
 func TestImpliesExcludes(t *testing.T) {
 	ts := MockHTTP(`<html><head></head><body><script>Drupal="test"; Backdrop="test";</script><div></div></body></html>`)
 	defer ts.Close()
@@ -209,6 +229,27 @@ func TestUnkownScraper(t *testing.T) {
 	_, err := Init(config)
 	log.Printf("%v", err)
 	assert.Error(t, err, "Should throw an error")
+}
+
+func TestConfidence(t *testing.T) {
+	ts := MockHTTP(`<html><head></head><body><script>AOS=[]; AOS.init="test"; AOS.refresh="test";</script><div></div></body></html>`)
+	defer ts.Close()
+	config := NewConfig()
+	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
+	res, err := wapp.Analyze(ts.URL)
+	assert.NoError(t, err, "GoWap Analyze error")
+	var output output
+	err = json.UnmarshalFromString(res.(string), &output)
+	assert.NoError(t, err, "Unmarshal error")
+	var found bool
+	for _, v := range output.Technologies {
+		if v.Name == "AOS" {
+			assert.Equal(t, 50, v.Confidence, "AOS confidence should be 50")
+			found = true
+		}
+	}
+	assert.True(t, found, "AOS should be found")
 }
 
 func MockHTTP(content string) *httptest.Server {
