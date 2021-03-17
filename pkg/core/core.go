@@ -45,7 +45,7 @@ type temp struct {
 }
 
 type application struct {
-	Name       string   `json:"name,ompitempty"`
+	Name       string   `json:"name,omitempty"`
 	Version    string   `json:"version"`
 	Categories []string `json:"categories,omitempty"`
 
@@ -92,6 +92,10 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 	}
 
 	err = wapp.Scraper.Init()
+	if err != nil {
+		log.Errorf("Scraper %s initialization failed : %v", config.Scraper, err)
+		return nil, err
+	}
 
 	var appsFile []byte
 	if config.AppsJSONPath != "" {
@@ -166,7 +170,7 @@ type resultApp struct {
 }
 
 type technology struct {
-	Name       string   `json:"name,ompitempty"`
+	Name       string   `json:"name,omitempty"`
 	Version    string   `json:"version"`
 	Categories []string `json:"categories,omitempty"`
 	Confidence int      `json:"confidence"`
@@ -185,13 +189,16 @@ type output struct {
 // Analyze retrieves application stack used on the provided web-site
 func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error) {
 
-	detectedApplications := &detected{new(sync.Mutex), make(map[string]*resultApp)}
-	scraped, err := wapp.Scraper.Scrape(paramURL)
-	res := &output{}
-
 	if !validateURL(paramURL) {
 		log.Errorf("URL not valid : %s", paramURL)
-		return res, errors.New("UrlNotValid")
+		return nil, errors.New("UrlNotValid")
+	}
+
+	detectedApplications := &detected{new(sync.Mutex), make(map[string]*resultApp)}
+	scraped, err := wapp.Scraper.Scrape(paramURL)
+	if err != nil {
+		log.Errorf("Scraper failed : %v", err)
+		return nil, err
 	}
 
 	canRenderPage := wapp.Scraper.CanRenderPage()
@@ -238,10 +245,8 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 			resolveImplies(&wapp.Apps, &detectedApplications.Apps, app.implies)
 		}
 	}
-
-	for _, scrapedURL := range scraped.URLs {
-		res.URLs = append(res.URLs, scrapedURL)
-	}
+	res := &output{}
+	res.URLs = append(res.URLs, scraped.URLs...)
 	for _, app := range detectedApplications.Apps {
 		// log.Printf("URL: %-25s DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)
 		res.Technologies = append(res.Technologies, app.technology)
@@ -439,15 +444,19 @@ func detectVersion(pattrn *pattern, value *string) (res string) {
 		for _, slice := range slices {
 			for i, match := range slice {
 				reg, _ := regexp.Compile(fmt.Sprintf("%s%d%s", "\\\\", i, "\\?([^:]+):(.*)$"))
-				ternary := reg.FindAllString(version, -1)
-				if ternary != nil && len(ternary) == 3 {
-					version = strings.Replace(version, ternary[0], ternary[1], -1)
+				ternary := reg.FindStringSubmatch(version)
+				if len(ternary) == 3 {
+					if match != "" {
+						version = strings.Replace(version, ternary[0], ternary[1], -1)
+					} else {
+						version = strings.Replace(version, ternary[0], ternary[2], -1)
+					}
 				}
 				reg2, _ := regexp.Compile(fmt.Sprintf("%s%d", "\\\\", i))
 				version = reg2.ReplaceAllString(version, match)
 			}
 		}
-		if _, ok := versions[version]; ok != true && version != "" {
+		if _, ok := versions[version]; !ok && version != "" {
 			versions[version] = struct{}{}
 		}
 		if len(versions) != 0 {
@@ -505,7 +514,7 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 					continue
 				}
 				if i > 0 {
-					additional := strings.Split(item, ":")
+					additional := strings.SplitN(item, ":", 2)
 					if len(additional) > 1 {
 						if additional[0] == "version" {
 							appPattern.version = additional[1]

@@ -35,11 +35,9 @@ func TestGowap(t *testing.T) {
 func TestBadUrl(t *testing.T) {
 	url := "https://doesnotexist"
 	wapp, err := Init(NewConfig())
+	assert.NoError(t, err, "GoWap Init error")
 	_, err = wapp.Analyze(url)
-	if err == nil {
-		log.Errorln(err)
-		t.FailNow()
-	}
+	assert.Error(t, err, "Bad URL should throw error")
 }
 
 func TestLoadingTimeout(t *testing.T) {
@@ -48,11 +46,9 @@ func TestLoadingTimeout(t *testing.T) {
 	config := NewConfig()
 	config.PageLoadTimeoutSeconds = 1
 	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
 	_, err = wapp.Analyze(ts.URL)
-	if err != nil {
-		log.Errorln(err)
-		t.FailNow()
-	}
+	assert.Error(t, err, "Timeout should throw error")
 }
 
 func TestColly(t *testing.T) {
@@ -61,17 +57,12 @@ func TestColly(t *testing.T) {
 	config := NewConfig()
 	config.Scraper = "colly"
 	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
 	res, err := wapp.Analyze(ts.URL)
-	if err != nil {
-		log.Errorln(err)
-		t.FailNow()
-	}
+	assert.NoError(t, err, "GoWap Analyze error")
 	var output output
 	err = json.UnmarshalFromString(res.(string), &output)
-	if err != nil {
-		log.Errorln(err)
-		t.FailNow()
-	}
+	assert.NoError(t, err, "Unmarshal error")
 
 	//We should have jquery in the output
 	var expected technology
@@ -88,12 +79,21 @@ func TestJSEval(t *testing.T) {
 	defer ts.Close()
 	config := NewConfig()
 	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
 	res, err := wapp.Analyze(ts.URL)
-	if err != nil {
-		log.Errorln(err)
-		t.FailNow()
+	assert.NoError(t, err, "GoWap Analyze error")
+	var output output
+	err = json.UnmarshalFromString(res.(string), &output)
+	assert.NoError(t, err, "Unmarshal error")
+
+	//We should have jquery in the output
+	var expected technology
+	for _, v := range output.Technologies {
+		if v.Name == "jQuery" {
+			expected = v
+		}
 	}
-	log.Println(res)
+	assert.Equal(t, "1.11.3", expected.Version, "We should find jQuery version 1.11.3")
 }
 
 func TestDomSearch(t *testing.T) {
@@ -101,12 +101,20 @@ func TestDomSearch(t *testing.T) {
 	defer ts.Close()
 	config := NewConfig()
 	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
 	res, err := wapp.Analyze(ts.URL)
-	if err != nil {
-		log.Errorln(err)
-		t.FailNow()
+	assert.NoError(t, err, "GoWap Analyze error")
+	var output output
+	err = json.UnmarshalFromString(res.(string), &output)
+	assert.NoError(t, err, "Unmarshal error")
+
+	var found bool
+	for _, v := range output.Technologies {
+		if v.Name == "Atlassian Jira" {
+			found = true
+		}
 	}
-	log.Println(res)
+	assert.True(t, found, "Atlassian Jira should be found in DOM")
 }
 
 func TestLoadExternalTechnologiesJSON(t *testing.T) {
@@ -123,6 +131,7 @@ func TestLoadExternalTechnologiesJSON(t *testing.T) {
 func TestTechnologiesFileParsing(t *testing.T) {
 	config := NewConfig()
 	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
 	unmarshalError := []byte(`{"this":"is","notgood"}`)
 	err = parseTechnologiesFile(&unmarshalError, wapp)
 	assert.Error(t, err, "Unmarshalling should throw an error")
@@ -227,12 +236,11 @@ func TestUnkownScraper(t *testing.T) {
 	config := NewConfig()
 	config.Scraper = "Unknown"
 	_, err := Init(config)
-	log.Printf("%v", err)
 	assert.Error(t, err, "Should throw an error")
 }
 
 func TestConfidence(t *testing.T) {
-	ts := MockHTTP(`<html><head></head><body><script>AOS=[]; AOS.init="test"; AOS.refresh="test";</script><div></div></body></html>`)
+	ts := MockHTTP(`<html><head><script src="alpine.min.js"></script></head><body><div x-data="dropdown()"></div></body></html>`)
 	defer ts.Close()
 	config := NewConfig()
 	wapp, err := Init(config)
@@ -244,12 +252,57 @@ func TestConfidence(t *testing.T) {
 	assert.NoError(t, err, "Unmarshal error")
 	var found bool
 	for _, v := range output.Technologies {
-		if v.Name == "AOS" {
-			assert.Equal(t, 50, v.Confidence, "AOS confidence should be 50")
+		if v.Name == "Alpine.js" {
+			assert.Equal(t, 100, v.Confidence, "Alpine.js confidence should be 100")
 			found = true
 		}
 	}
 	assert.True(t, found, "AOS should be found")
+}
+
+func TestVersion(t *testing.T) {
+	ts := MockHTTP(`<html><head><script src="4.5.6/modernizr.1.2.3.js"></script></head><body><div></div></body></html>`)
+	defer ts.Close()
+	config := NewConfig()
+	wapp, err := Init(config)
+	assert.NoError(t, err, "GoWap Init error")
+	res, err := wapp.Analyze(ts.URL)
+	assert.NoError(t, err, "GoWap Analyze error")
+	var output output
+	err = json.UnmarshalFromString(res.(string), &output)
+	assert.NoError(t, err, "Unmarshal error")
+
+	var found bool
+	for _, v := range output.Technologies {
+		if v.Name == "Modernizr" {
+			assert.Equal(t, "4.5.6", v.Version, "Modernizr version should be 4.5.6")
+			found = true
+		}
+	}
+	assert.True(t, found, "Modernizr should be found")
+
+	ts2 := MockHTTP(`<html><head><script src="abc/modernizr.1.2.3.js"></script></head><body><div></div></body></html>`)
+	defer ts2.Close()
+	res, err = wapp.Analyze(ts2.URL)
+	assert.NoError(t, err, "GoWap Analyze error")
+	err = json.UnmarshalFromString(res.(string), &output)
+	assert.NoError(t, err, "Unmarshal error")
+	for _, v := range output.Technologies {
+		if v.Name == "Modernizr" {
+			assert.Equal(t, "1.2.3", v.Version, "Modernizr version should be 1.2.3")
+			found = true
+		}
+	}
+	assert.True(t, found, "Modernizr should be found")
+}
+
+func TestParsePattern(t *testing.T) {
+	patterns := make(map[string]int)
+	//Logging output should be tested here
+	parsePatterns(patterns)
+	patterns2 := make(map[string]interface{})
+	patterns2["test"] = patterns
+	parsePatterns(patterns2)
 }
 
 func MockHTTP(content string) *httptest.Server {
