@@ -89,9 +89,7 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 		scraped.DNS["MX"] = append(scraped.DNS["MX"], string(mx.Host))
 	}
 	txtSlice, _ := net.LookupTXT(domain)
-	for _, txt := range txtSlice {
-		scraped.DNS["TXT"] = append(scraped.DNS["TXT"], txt)
-	}
+	scraped.DNS["TXT"] = append(scraped.DNS["TXT"], txtSlice...)
 	cname, _ := net.LookupCNAME(domain)
 	scraped.DNS["CNAME"] = append(scraped.DNS["CNAME"], cname)
 

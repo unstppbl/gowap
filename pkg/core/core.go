@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,6 +22,7 @@ var wg sync.WaitGroup
 
 //go:embed assets/technologies.json
 var f embed.FS
+var embedPath = "assets/technologies.json"
 
 // Config for gowap
 type Config struct {
@@ -100,22 +100,18 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 	var appsFile []byte
 	if config.AppsJSONPath != "" {
 		log.Infof("Trying to open technologies file at %s", config.AppsJSONPath)
-		if _, err := os.Stat(config.AppsJSONPath); err == nil {
-			appsFile, err = ioutil.ReadFile(config.AppsJSONPath)
-			if err != nil {
-				log.Warningf("Couldn't open file at %s\n", config.AppsJSONPath)
-			} else {
-				log.Infof("Technologies file opened")
-			}
+		appsFile, err = ioutil.ReadFile(config.AppsJSONPath)
+		if err != nil {
+			log.Warningf("Couldn't open file at %s\n", config.AppsJSONPath)
 		} else {
-			log.Warningf("Couldn't find file at %s\n", config.AppsJSONPath)
+			log.Infof("Technologies file opened")
 		}
 	}
 	if config.AppsJSONPath == "" || len(appsFile) == 0 {
-		log.Infof("Loading included asset technologies.json")
-		appsFile, err = f.ReadFile("assets/technologies.json")
+		log.Infof("Loading included asset %s", embedPath)
+		appsFile, err = f.ReadFile(embedPath)
 		if err != nil {
-			log.Errorf("Couldn't open included asset technologies.json\n")
+			log.Errorf("Couldn't open included asset %s\n", embedPath)
 			return nil, err
 		}
 	}

@@ -129,6 +129,7 @@ func TestLoadExternalTechnologiesJSON(t *testing.T) {
 }
 
 func TestTechnologiesFileParsing(t *testing.T) {
+	//Bad file format
 	config := NewConfig()
 	wapp, err := Init(config)
 	assert.NoError(t, err, "GoWap Init error")
@@ -147,6 +148,13 @@ func TestTechnologiesFileParsing(t *testing.T) {
 	noTechnologyFound := []byte(`{"categories":{"1":{"name":"CMS","priority":1}},"this":"isgood"}`)
 	err = parseTechnologiesFile(&noTechnologyFound, wapp)
 	assert.Error(t, err, "Should throw an error NoTechnologyFound")
+
+	//Error loading included asset
+	embedPath = "does/not/exist"
+	_, err = Init(config)
+	assert.Error(t, err, "GoWap Init should throw an error trying to open non existing embed file")
+	embedPath = "assets/technologies.json"
+
 }
 
 func TestImpliesExcludes(t *testing.T) {
@@ -303,6 +311,13 @@ func TestParsePattern(t *testing.T) {
 	patterns2 := make(map[string]interface{})
 	patterns2["test"] = patterns
 	parsePatterns(patterns2)
+}
+
+func TestBrowserInit(t *testing.T) {
+	config := NewConfig()
+	config.BrowserTimeoutSeconds = 0
+	_, err := Init(config)
+	assert.Error(t, err, "GoWap Init should throw an error")
 }
 
 func MockHTTP(content string) *httptest.Server {
