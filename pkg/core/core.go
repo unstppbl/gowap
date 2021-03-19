@@ -1,49 +1,51 @@
-package gowap
+package core
 
 import (
-	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
+	"github.com/PuerkitoBio/goquery"
+	scraper "github.com/dranih/gowap/pkg/scraper"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/proto"
 	jsoniter "github.com/json-iterator/go"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 var wg sync.WaitGroup
 
-type scrapedURL struct {
-	url    string
-	status int
+//go:embed assets/technologies.json
+var f embed.FS
+var embedPath = "assets/technologies.json"
+
+// Config for gowap
+type Config struct {
+	AppsJSONPath           string
+	BrowserTimeoutSeconds  int
+	NetworkTimeoutSeconds  int
+	PageLoadTimeoutSeconds int
+	JSON                   bool
+	Scraper                string
 }
 
-type scrapedData struct {
-	urls    []scrapedURL
-	html    string
-	headers map[string][]string
-	scripts []string
-	cookies map[string]string
-	meta    map[string][]string
-	dns     map[string][]string
+// NewConfig struct with default values
+func NewConfig() *Config {
+	return &Config{AppsJSONPath: "", BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3, JSON: true, Scraper: "rod"}
 }
 
 type temp struct {
 	Apps       map[string]*jsoniter.RawMessage `json:"technologies"`
 	Categories map[string]*jsoniter.RawMessage `json:"categories"`
 }
+
 type application struct {
-	Name       string   `json:"name,ompitempty"`
+	Name       string   `json:"name,omitempty"`
 	Version    string   `json:"version"`
 	Categories []string `json:"categories,omitempty"`
 
@@ -69,45 +71,62 @@ type category struct {
 
 // Wappalyzer implements analyze method as original wappalyzer does
 type Wappalyzer struct {
-	Browser                *rod.Browser
-	BrowserTimeoutSeconds  int
-	NetworkTimeoutSeconds  int
-	PageLoadTimeoutSeconds int
-	Apps                   map[string]*application
-	Categories             map[string]*category
-	JSON                   bool
+	Scraper    scraper.Scraper
+	Apps       map[string]*application
+	Categories map[string]*category
+	JSON       bool
 }
 
 // Init initializes wappalyzer
-func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
-	wapp = &Wappalyzer{BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3}
-
-	errRod := rod.Try(func() {
-		wapp.Browser = rod.
-			New().
-			Timeout(time.Duration(wapp.BrowserTimeoutSeconds) * time.Second).
-			MustConnect()
-	})
-	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while connecting Browser", wapp.BrowserTimeoutSeconds)
-		return wapp, errRod
-	} else if errRod != nil {
-		log.Errorf("Error while connecting Browser")
-		return wapp, errRod
+func Init(config *Config) (wapp *Wappalyzer, err error) {
+	wapp = &Wappalyzer{}
+	// Selecting scraper
+	switch config.Scraper {
+	case "colly":
+		wapp.Scraper = &scraper.CollyScraper{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
+	case "rod":
+		wapp.Scraper = &scraper.RodScraper{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
+	default:
+		log.Errorf("Unknown scraper %s", config.Scraper)
+		return wapp, errors.New("UnknownScraper")
 	}
 
-	wapp.Browser.IgnoreCertErrors(true)
-
-	appsFile, err := ioutil.ReadFile(appsJSONPath)
+	err = wapp.Scraper.Init()
 	if err != nil {
-		log.Errorf("Couldn't open file at %s\n", appsJSONPath)
+		log.Errorf("Scraper %s initialization failed : %v", config.Scraper, err)
 		return nil, err
 	}
+
+	var appsFile []byte
+	if config.AppsJSONPath != "" {
+		log.Infof("Trying to open technologies file at %s", config.AppsJSONPath)
+		appsFile, err = ioutil.ReadFile(config.AppsJSONPath)
+		if err != nil {
+			log.Warningf("Couldn't open file at %s\n", config.AppsJSONPath)
+		} else {
+			log.Infof("Technologies file opened")
+		}
+	}
+	if config.AppsJSONPath == "" || len(appsFile) == 0 {
+		log.Infof("Loading included asset %s", embedPath)
+		appsFile, err = f.ReadFile(embedPath)
+		if err != nil {
+			log.Errorf("Couldn't open included asset %s\n", embedPath)
+			return nil, err
+		}
+	}
+
+	err = parseTechnologiesFile(&appsFile, wapp)
+	wapp.JSON = config.JSON
+	return wapp, err
+}
+
+func parseTechnologiesFile(appsFile *[]byte, wapp *Wappalyzer) error {
 	temporary := &temp{}
-	err = json.Unmarshal(appsFile, &temporary)
+	err := json.Unmarshal(*appsFile, &temporary)
 	if err != nil {
 		log.Errorf("Couldn't unmarshal apps.json file: %s\n", err)
-		return nil, err
+		return err
 	}
 	wapp.Apps = make(map[string]*application)
 	wapp.Categories = make(map[string]*category)
@@ -115,31 +134,42 @@ func Init(appsJSONPath string, JSON bool) (wapp *Wappalyzer, err error) {
 		catg := &category{}
 		if err = json.Unmarshal(*v, catg); err != nil {
 			log.Errorf("[!] Couldn't unmarshal Categories: %s\n", err)
-			return nil, err
+			return err
 		}
 		wapp.Categories[k] = catg
+	}
+	if len(wapp.Categories) < 1 {
+		log.Errorf("Couldn't find categories in technologies file")
+		return errors.New("NoCategoryFound")
 	}
 	for k, v := range temporary.Apps {
 		app := &application{}
 		app.Name = k
 		if err = json.Unmarshal(*v, app); err != nil {
 			log.Errorf("Couldn't unmarshal Apps: %s\n", err)
-			return nil, err
+			return err
 		}
 		parseCategories(app, &wapp.Categories)
 		wapp.Apps[k] = app
 	}
-	wapp.JSON = JSON
-	return wapp, nil
+	if len(wapp.Apps) < 1 {
+		log.Errorf("Couldn't find technologies in technologies file")
+		return errors.New("NoTechnologyFound")
+	}
+	return err
 }
 
 type resultApp struct {
-	Name       string   `json:"name,ompitempty"`
+	technology technology
+	excludes   interface{}
+	implies    interface{}
+}
+
+type technology struct {
+	Name       string   `json:"name,omitempty"`
 	Version    string   `json:"version"`
 	Categories []string `json:"categories,omitempty"`
 	Confidence int      `json:"confidence"`
-	excludes   interface{}
-	implies    interface{}
 }
 
 type detected struct {
@@ -147,132 +177,56 @@ type detected struct {
 	Apps map[string]*resultApp
 }
 
+type output struct {
+	URLs         []scraper.ScrapedURL `json:"urls,omitempty"`
+	Technologies []technology         `json:"technologies,omitempty"`
+}
+
 // Analyze retrieves application stack used on the provided web-site
 func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error) {
 
+	if !validateURL(paramURL) {
+		log.Errorf("URL not valid : %s", paramURL)
+		return nil, errors.New("UrlNotValid")
+	}
+
 	detectedApplications := &detected{new(sync.Mutex), make(map[string]*resultApp)}
-	scraped := &scrapedData{}
-	res := map[string][]interface{}{}
-
-	var e proto.NetworkResponseReceived
-	page := wapp.Browser.MustPage("")
-	wait := page.WaitEvent(&e)
-	go page.MustHandleDialog()
-
-	errRod := rod.Try(func() {
-		page.
-			Timeout(time.Duration(wapp.NetworkTimeoutSeconds) * time.Second).
-			MustNavigate(paramURL)
-	})
-	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while visiting %s", wapp.NetworkTimeoutSeconds, paramURL)
-		return res, errRod
-	} else if errRod != nil {
-		log.Errorf("Error while visiting %s", paramURL)
-		return res, errRod
+	scraped, err := wapp.Scraper.Scrape(paramURL)
+	if err != nil {
+		log.Errorf("Scraper failed : %v", err)
+		return nil, err
 	}
 
-	wait()
-
-	scraped.urls = append(scraped.urls, scrapedURL{e.Response.URL, e.Response.Status})
-	scraped.headers = make(map[string][]string)
-	for header, value := range e.Response.Headers {
-		lowerCaseKey := strings.ToLower(header)
-		scraped.headers[lowerCaseKey] = append(scraped.headers[lowerCaseKey], value.String())
-	}
-
-	u, _ := url.Parse(paramURL)
-	parts := strings.Split(u.Hostname(), ".")
-	domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
-	scraped.dns = make(map[string][]string)
-	nsSlice, _ := net.LookupNS(domain)
-	for _, ns := range nsSlice {
-		scraped.dns["NS"] = append(scraped.dns["NS"], string(ns.Host))
-	}
-	mxSlice, _ := net.LookupMX(domain)
-	for _, mx := range mxSlice {
-		scraped.dns["MX"] = append(scraped.dns["MX"], string(mx.Host))
-	}
-	txtSlice, _ := net.LookupTXT(domain)
-	for _, txt := range txtSlice {
-		scraped.dns["TXT"] = append(scraped.dns["TXT"], txt)
-	}
-	cname, _ := net.LookupCNAME(domain)
-	scraped.dns["CNAME"] = append(scraped.dns["CNAME"], cname)
-
-	//TODO : headers and cookies could be parsed before load completed
-	errRod = rod.Try(func() {
-		page.
-			Timeout(time.Duration(wapp.PageLoadTimeoutSeconds) * time.Second).
-			MustWaitLoad()
-	})
-	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while loading %s", wapp.PageLoadTimeoutSeconds, paramURL)
-		return res, errRod
-	} else if errRod != nil {
-		log.Errorf("Error while visiting %s", paramURL)
-		return res, errRod
-	}
-
-	scraped.html = page.MustHTML()
-
-	scripts, _ := page.Elements("script")
-	for _, script := range scripts {
-		if src, _ := script.Property("src"); src.Val() != nil {
-			scraped.scripts = append(scraped.scripts, src.String())
-		}
-	}
-
-	metas, _ := page.Elements("meta")
-	scraped.meta = make(map[string][]string)
-	for _, meta := range metas {
-		name, _ := meta.Property("name")
-		if name.Val() == nil {
-			name, _ = meta.Property("property")
-		}
-		if name.Val() != nil {
-			if content, _ := meta.Property("content"); content.Val() != nil {
-				nameLower := strings.ToLower(name.String())
-				scraped.meta[nameLower] = append(scraped.meta[nameLower], content.String())
-			}
-		}
-	}
-
-	scraped.cookies = make(map[string]string)
-	str := []string{}
-	cookies, _ := page.Cookies(str)
-	for _, cookie := range cookies {
-		scraped.cookies[cookie.Name] = cookie.Value
-	}
+	canRenderPage := wapp.Scraper.CanRenderPage()
 
 	for _, app := range wapp.Apps {
 		wg.Add(1)
 		go func(app *application) {
 			defer wg.Done()
 			analyzeURL(app, paramURL, detectedApplications)
-			if app.Js != nil {
-				analyseJS(app, page, detectedApplications)
+			if canRenderPage && app.Js != nil {
+				analyseJS(app, wapp.Scraper, detectedApplications)
 			}
-			if app.Dom != nil {
-				analyseDom(app, page, detectedApplications)
+			if canRenderPage && app.Dom != nil {
+				analyseDom(app, scraped.HTML, detectedApplications)
 			}
 			if app.HTML != nil {
-				analyzeHTML(app, scraped.html, detectedApplications)
+				analyzeHTML(app, scraped.HTML, detectedApplications)
 			}
-			if len(scraped.headers) > 0 && app.Headers != nil {
-				analyzeHeaders(app, scraped.headers, detectedApplications)
+			if len(scraped.Headers) > 0 && app.Headers != nil {
+				analyzeHeaders(app, scraped.Headers, detectedApplications)
 			}
-			if len(scraped.cookies) > 0 && app.Cookies != nil {
-				analyzeCookies(app, scraped.cookies, detectedApplications)
+			if len(scraped.Cookies) > 0 && app.Cookies != nil {
+				analyzeCookies(app, scraped.Cookies, detectedApplications)
 			}
-			if len(scraped.scripts) > 0 && app.Scripts != nil {
-				analyzeScripts(app, scraped.scripts, detectedApplications)
+			if len(scraped.Scripts) > 0 && app.Scripts != nil {
+				analyzeScripts(app, scraped.Scripts, detectedApplications)
 			}
-			if len(scraped.meta) > 0 && app.Meta != nil {
-				analyzeMeta(app, scraped.meta, detectedApplications)
+			if len(scraped.Meta) > 0 && app.Meta != nil {
+				analyzeMeta(app, scraped.Meta, detectedApplications)
 			}
-			if len(scraped.dns) > 0 && app.DNS != nil {
-				analyseDNS(app, scraped.dns, detectedApplications)
+			if len(scraped.DNS) > 0 && app.DNS != nil {
+				analyseDNS(app, scraped.DNS, detectedApplications)
 			}
 		}(app)
 	}
@@ -287,20 +241,14 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 			resolveImplies(&wapp.Apps, &detectedApplications.Apps, app.implies)
 		}
 	}
-
-	for _, scrapedURL := range scraped.urls {
-		res["urls"] = append(res["urls"], map[string]interface{}{"url": scrapedURL.url, "status": scrapedURL.status})
-	}
+	res := &output{}
+	res.URLs = append(res.URLs, scraped.URLs...)
 	for _, app := range detectedApplications.Apps {
 		// log.Printf("URL: %-25s DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)
-		res["technologies"] = append(res["technologies"], map[string]interface{}{"name": app.Name, "confidence": app.Confidence, "version": app.Version, "categories": app.Categories})
+		res.Technologies = append(res.Technologies, app.technology)
 	}
 	if wapp.JSON {
-		j, err := json.Marshal(res)
-		if err != nil {
-			return nil, err
-		}
-		return string(j), nil
+		return json.MarshalToString(res)
 	}
 	return res, nil
 }
@@ -396,18 +344,14 @@ func analyzeMeta(app *application, metas map[string][]string, detectedApplicatio
 }
 
 // analyseJS evals the JS properties and tries to match
-func analyseJS(app *application, page *rod.Page, detectedApplications *detected) {
+func analyseJS(app *application, scraper scraper.Scraper, detectedApplications *detected) {
 	patterns := parsePatterns(app.Js)
 	for jsProp, v := range patterns {
-		res, err := page.Eval(jsProp)
-		if err == nil && res != nil && res.Value.Val() != nil {
-			value := ""
-			if res.Type == "string" || res.Type == "number" {
-				value = res.Value.String()
-			}
+		value, err := scraper.EvalJS(jsProp)
+		if err == nil && value != nil {
 			for _, pattrn := range v {
-				if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
-					version := detectVersion(pattrn, &value)
+				if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(*value)) {
+					version := detectVersion(pattrn, value)
 					addApp(app, detectedApplications, version, pattrn.confidence)
 				}
 			}
@@ -416,36 +360,35 @@ func analyseJS(app *application, page *rod.Page, detectedApplications *detected)
 }
 
 // analyseDom evals the DOM tries to match
-func analyseDom(app *application, page *rod.Page, detectedApplications *detected) {
-	for domSelector, v1 := range app.Dom {
-		//BUG : page.Element hangs, using page.Elements and take first el
-		res, err := page.Elements(domSelector)
-		resFirst := res.First()
-		if err == nil && resFirst != nil {
-			for domType, v := range v1 {
-				patterns := parsePatterns(v)
-				for attribute, pattrns := range patterns {
-					for _, pattrn := range pattrns {
-						value := ""
-						switch domType {
-						case "text":
-							value, _ = resFirst.Text()
-						case "properties":
-							if attr, err := resFirst.Property(attribute); err == nil && attr.Val() != nil {
-								value = attr.String()
+func analyseDom(app *application, html string, detectedApplications *detected) {
+	reader := strings.NewReader(html)
+	doc, err := goquery.NewDocumentFromReader(reader)
+	if err == nil {
+		for domSelector, v1 := range app.Dom {
+			doc.Find(domSelector).First().Each(func(i int, s *goquery.Selection) {
+				for domType, v := range v1 {
+					patterns := parsePatterns(v)
+					for attribute, pattrns := range patterns {
+						for _, pattrn := range pattrns {
+							var value string
+							var exists bool
+							switch domType {
+							case "text":
+								value = s.Text()
+								exists = true
+							case "properties":
+								// Not implemented, should be done into the browser to get element properties
+							case "attributes":
+								value, exists = s.Attr(attribute)
 							}
-						case "attributes":
-							if attr, err := resFirst.Attribute(attribute); err == nil && attr != nil {
-								value = *attr
+							if exists && pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
+								version := detectVersion(pattrn, &value)
+								addApp(app, detectedApplications, version, pattrn.confidence)
 							}
-						}
-						if pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
-							version := detectVersion(pattrn, &value)
-							addApp(app, detectedApplications, version, pattrn.confidence)
 						}
 					}
 				}
-			}
+			})
 		}
 	}
 }
@@ -473,14 +416,14 @@ func analyseDNS(app *application, dns map[string][]string, detectedApplications 
 func addApp(app *application, detectedApplications *detected, version string, confidence int) {
 	detectedApplications.Mu.Lock()
 	if _, ok := (*detectedApplications).Apps[app.Name]; !ok {
-		resApp := &resultApp{app.Name, version, app.Categories, confidence, app.Excludes, app.Implies}
-		(*detectedApplications).Apps[resApp.Name] = resApp
+		resApp := &resultApp{technology{app.Name, version, app.Categories, confidence}, app.Excludes, app.Implies}
+		(*detectedApplications).Apps[resApp.technology.Name] = resApp
 	} else {
-		if (*detectedApplications).Apps[app.Name].Version == "" {
-			(*detectedApplications).Apps[app.Name].Version = version
+		if (*detectedApplications).Apps[app.Name].technology.Version == "" {
+			(*detectedApplications).Apps[app.Name].technology.Version = version
 		}
-		if confidence > (*detectedApplications).Apps[app.Name].Confidence {
-			(*detectedApplications).Apps[app.Name].Confidence = confidence
+		if confidence > (*detectedApplications).Apps[app.Name].technology.Confidence {
+			(*detectedApplications).Apps[app.Name].technology.Confidence = confidence
 		}
 	}
 	detectedApplications.Mu.Unlock()
@@ -497,15 +440,19 @@ func detectVersion(pattrn *pattern, value *string) (res string) {
 		for _, slice := range slices {
 			for i, match := range slice {
 				reg, _ := regexp.Compile(fmt.Sprintf("%s%d%s", "\\\\", i, "\\?([^:]+):(.*)$"))
-				ternary := reg.FindAllString(version, -1)
-				if ternary != nil && len(ternary) == 3 {
-					version = strings.Replace(version, ternary[0], ternary[1], -1)
+				ternary := reg.FindStringSubmatch(version)
+				if len(ternary) == 3 {
+					if match != "" {
+						version = strings.Replace(version, ternary[0], ternary[1], -1)
+					} else {
+						version = strings.Replace(version, ternary[0], ternary[2], -1)
+					}
 				}
 				reg2, _ := regexp.Compile(fmt.Sprintf("%s%d", "\\\\", i))
 				version = reg2.ReplaceAllString(version, match)
 			}
 		}
-		if _, ok := versions[version]; ok != true && version != "" {
+		if _, ok := versions[version]; !ok && version != "" {
 			versions[version] = struct{}{}
 		}
 		if len(versions) != 0 {
@@ -563,7 +510,7 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 					continue
 				}
 				if i > 0 {
-					additional := strings.Split(item, ":")
+					additional := strings.SplitN(item, ":", 2)
 					if len(additional) > 1 {
 						if additional[0] == "version" {
 							appPattern.version = additional[1]
@@ -602,7 +549,7 @@ func resolveImplies(apps *map[string]*application, detected *map[string]*resultA
 		for _, implied := range v {
 			app, ok := (*apps)[implied.str]
 			if _, ok2 := (*detected)[implied.str]; ok && !ok2 {
-				resApp := &resultApp{app.Name, implied.version, app.Categories, implied.confidence, app.Excludes, app.Implies}
+				resApp := &resultApp{technology{app.Name, implied.version, app.Categories, implied.confidence}, app.Excludes, app.Implies}
 				(*detected)[implied.str] = resApp
 				if app.Implies != nil {
 					resolveImplies(apps, detected, app.Implies)
@@ -616,4 +563,13 @@ func parseCategories(app *application, categoriesCatalog *map[string]*category) 
 	for _, categoryID := range app.Cats {
 		app.Categories = append(app.Categories, (*categoriesCatalog)[strconv.Itoa(categoryID)].Name)
 	}
+}
+
+func validateURL(url string) bool {
+	regex, err := regexp.Compile(`^(?:http(s)?:\/\/)?[\w.-]+(?:\.[\w\.-]+)+[\w\-\._~:/?#[\]@!\$&'\(\)\*\+,;=.]+$`)
+	ret := false
+	if err == nil {
+		ret = regex.MatchString(url)
+	}
+	return ret
 }
