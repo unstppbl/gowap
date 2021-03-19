@@ -1,10 +1,6 @@
 package scraper
 
 import (
-	"context"
-	"errors"
-	"net"
-	"net/url"
 	"strings"
 	"time"
 
@@ -33,11 +29,8 @@ func (s *RodScraper) Init() error {
 			Timeout(time.Duration(s.BrowserTimeoutSeconds) * time.Second).
 			MustConnect()
 	})
-	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while connecting Browser", s.BrowserTimeoutSeconds)
-		return errRod
-	} else if errRod != nil {
-		log.Errorf("Error while connecting Browser")
+	if errRod != nil {
+		log.Errorf("Error while connecting Browser : %s", errRod.Error())
 		return errRod
 	}
 
@@ -59,11 +52,8 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 			Timeout(time.Duration(s.NetworkTimeoutSeconds) * time.Second).
 			MustNavigate(paramURL)
 	})
-	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while visiting %s", s.NetworkTimeoutSeconds, paramURL)
-		return scraped, errRod
-	} else if errRod != nil {
-		log.Errorf("Error while visiting %s", paramURL)
+	if errRod != nil {
+		log.Errorf("Error while visiting %s : %s", paramURL, errRod.Error())
 		return scraped, errRod
 	}
 
@@ -76,22 +66,7 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 		scraped.Headers[lowerCaseKey] = append(scraped.Headers[lowerCaseKey], value.String())
 	}
 
-	u, _ := url.Parse(paramURL)
-	parts := strings.Split(u.Hostname(), ".")
-	domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
-	scraped.DNS = make(map[string][]string)
-	nsSlice, _ := net.LookupNS(domain)
-	for _, ns := range nsSlice {
-		scraped.DNS["NS"] = append(scraped.DNS["NS"], string(ns.Host))
-	}
-	mxSlice, _ := net.LookupMX(domain)
-	for _, mx := range mxSlice {
-		scraped.DNS["MX"] = append(scraped.DNS["MX"], string(mx.Host))
-	}
-	txtSlice, _ := net.LookupTXT(domain)
-	scraped.DNS["TXT"] = append(scraped.DNS["TXT"], txtSlice...)
-	cname, _ := net.LookupCNAME(domain)
-	scraped.DNS["CNAME"] = append(scraped.DNS["CNAME"], cname)
+	scraped.DNS = scrapeDNS(paramURL)
 
 	//TODO : headers and cookies could be parsed before load completed
 	errRod = rod.Try(func() {
@@ -99,11 +74,8 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 			Timeout(time.Duration(s.PageLoadTimeoutSeconds) * time.Second).
 			MustWaitLoad()
 	})
-	if errors.Is(errRod, context.DeadlineExceeded) {
-		log.Errorf("Timeout reached (%ds) while loading %s", s.PageLoadTimeoutSeconds, paramURL)
-		return scraped, errRod
-	} else if errRod != nil {
-		log.Errorf("Error while visiting %s", paramURL)
+	if errRod != nil {
+		log.Errorf("Error while loading %s : %s", paramURL, errRod.Error())
 		return scraped, errRod
 	}
 
@@ -119,14 +91,14 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 	metas, _ := s.Page.Elements("meta")
 	scraped.Meta = make(map[string][]string)
 	for _, meta := range metas {
-		name, _ := meta.Property("name")
-		if name.Val() == nil {
-			name, _ = meta.Property("property")
+		name, _ := meta.Attribute("name")
+		if name == nil {
+			name, _ = meta.Attribute("property")
 		}
-		if name.Val() != nil {
-			if content, _ := meta.Property("content"); content.Val() != nil {
-				nameLower := strings.ToLower(name.String())
-				scraped.Meta[nameLower] = append(scraped.Meta[nameLower], content.String())
+		if name != nil {
+			if content, _ := meta.Attribute("content"); content != nil {
+				nameLower := strings.ToLower(*name)
+				scraped.Meta[nameLower] = append(scraped.Meta[nameLower], *content)
 			}
 		}
 	}

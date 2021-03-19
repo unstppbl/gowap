@@ -1,5 +1,11 @@
 package scraper
 
+import (
+	"net"
+	"net/url"
+	"strings"
+)
+
 type ScrapedURL struct {
 	URL    string
 	Status int
@@ -21,4 +27,25 @@ type Scraper interface {
 	CanRenderPage() bool
 	Scrape(paramURL string) (*ScrapedData, error)
 	EvalJS(jsProp string) (*string, error)
+}
+
+func scrapeDNS(paramURL string) map[string][]string {
+	scrapedDNS := make(map[string][]string)
+	u, _ := url.Parse(paramURL)
+	parts := strings.Split(u.Hostname(), ".")
+	domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
+	nsSlice, _ := net.LookupNS(domain)
+	for _, ns := range nsSlice {
+		scrapedDNS["NS"] = append(scrapedDNS["NS"], string(ns.Host))
+	}
+	mxSlice, _ := net.LookupMX(domain)
+	for _, mx := range mxSlice {
+		scrapedDNS["MX"] = append(scrapedDNS["MX"], string(mx.Host))
+	}
+	txtSlice, _ := net.LookupTXT(domain)
+	scrapedDNS["TXT"] = append(scrapedDNS["TXT"], txtSlice...)
+	cname, _ := net.LookupCNAME(domain)
+	scrapedDNS["CNAME"] = append(scrapedDNS["CNAME"], cname)
+
+	return scrapedDNS
 }

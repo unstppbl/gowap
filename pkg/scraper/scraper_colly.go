@@ -53,6 +53,7 @@ func (s *CollyScraper) Init() error {
 func (s *CollyScraper) Scrape(paramURL string) (*ScrapedData, error) {
 
 	scraped := &ScrapedData{}
+	scraped.DNS = scrapeDNS(paramURL)
 
 	s.Collector.OnResponse(func(r *colly.Response) {
 		// log.Infof("Visited %s", r.Request.URL)
