@@ -26,17 +26,16 @@ var embedPath = "assets/technologies.json"
 
 // Config for gowap
 type Config struct {
-	AppsJSONPath           string
-	BrowserTimeoutSeconds  int
-	NetworkTimeoutSeconds  int
-	PageLoadTimeoutSeconds int
-	JSON                   bool
-	Scraper                string
+	AppsJSONPath          string
+	TimeoutSeconds        int
+	LoadingTimeoutSeconds int
+	JSON                  bool
+	Scraper               string
 }
 
 // NewConfig struct with default values
 func NewConfig() *Config {
-	return &Config{AppsJSONPath: "", BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3, JSON: true, Scraper: "rod"}
+	return &Config{AppsJSONPath: "", TimeoutSeconds: 3, LoadingTimeoutSeconds: 3, JSON: true, Scraper: "rod"}
 }
 
 type temp struct {
@@ -80,18 +79,19 @@ type Wappalyzer struct {
 // Init initializes wappalyzer
 func Init(config *Config) (wapp *Wappalyzer, err error) {
 	wapp = &Wappalyzer{}
-	// Selecting scraper
+	// Scraper initialization
 	switch config.Scraper {
 	case "colly":
-		wapp.Scraper = &scraper.CollyScraper{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
+		wapp.Scraper = &scraper.CollyScraper{TimeoutSeconds: config.TimeoutSeconds, LoadingTimeoutSeconds: config.LoadingTimeoutSeconds}
+		err = wapp.Scraper.Init()
 	case "rod":
-		wapp.Scraper = &scraper.RodScraper{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
+		wapp.Scraper = &scraper.RodScraper{TimeoutSeconds: config.TimeoutSeconds, LoadingTimeoutSeconds: config.LoadingTimeoutSeconds}
+		err = wapp.Scraper.Init()
 	default:
 		log.Errorf("Unknown scraper %s", config.Scraper)
-		return wapp, errors.New("UnknownScraper")
+		err = errors.New("UnknownScraper")
 	}
 
-	err = wapp.Scraper.Init()
 	if err != nil {
 		log.Errorf("Scraper %s initialization failed : %v", config.Scraper, err)
 		return nil, err

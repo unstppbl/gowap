@@ -39,7 +39,7 @@ func TestLoadingTimeout(t *testing.T) {
 	ts := MockHTTP("<html><script>var now = Date.now();var end = now + 2000;while (now < end) { now = Date.now(); }</script></html>")
 	defer ts.Close()
 	config := NewConfig()
-	config.PageLoadTimeoutSeconds = 1
+	config.LoadingTimeoutSeconds = 1
 	wapp, err := Init(config)
 	if assert.NoError(t, err, "GoWap Init error") {
 		_, err = wapp.Analyze(ts.URL)
@@ -331,13 +331,6 @@ func TestParsePattern(t *testing.T) {
 	patterns2 := make(map[string]interface{})
 	patterns2["test"] = patterns
 	parsePatterns(patterns2)
-}
-
-func TestBrowserInit(t *testing.T) {
-	config := NewConfig()
-	config.BrowserTimeoutSeconds = 0
-	_, err := Init(config)
-	assert.Error(t, err, "GoWap Init should throw an error")
 }
 
 func MockHTTP(content string) *httptest.Server {

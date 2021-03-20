@@ -25,7 +25,7 @@ func TestCollyScraper(t *testing.T) {
 }
 
 func TestRodScraper(t *testing.T) {
-	scraperTest := &RodScraper{BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 2, PageLoadTimeoutSeconds: 2}
+	scraperTest := &RodScraper{TimeoutSeconds: 2, LoadingTimeoutSeconds: 2}
 
 	assert.True(t, scraperTest.CanRenderPage(), "Rod can render JS")
 
@@ -43,19 +43,14 @@ func TestRodScraper(t *testing.T) {
 	assert.Nil(t, resJS, "Should return nil")
 	assert.Error(t, err, "Rod should throw error on rendering bad JS")
 
-	scraperTest.BrowserTimeoutSeconds = 0
-	err = scraperTest.Init()
-	assert.Error(t, err, "GoWap Init should throw an error")
-	scraperTest.BrowserTimeoutSeconds = 4
-
 	ts := MockHTTP("<html><script>var now = Date.now();var end = now + 2000;while (now < end) { now = Date.now(); }</script></html>")
 	defer ts.Close()
-	scraperTest.PageLoadTimeoutSeconds = 1
+	scraperTest.LoadingTimeoutSeconds = 1
 	err = scraperTest.Init()
 	assert.NoError(t, err, "GoWap Init error")
 	_, err = scraperTest.Scrape(ts.URL)
 	assert.Error(t, err, "Timeout should throw error")
-	scraperTest.PageLoadTimeoutSeconds = 2
+	scraperTest.LoadingTimeoutSeconds = 2
 
 	url := "https://doesnotexist"
 	err = scraperTest.Init()

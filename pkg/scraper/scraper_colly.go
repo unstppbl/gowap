@@ -19,23 +19,22 @@ func (s *CollyScraper) CanRenderPage() bool {
 }
 
 type CollyScraper struct {
-	Collector              *colly.Collector
-	Transport              *http.Transport
-	BrowserTimeoutSeconds  int
-	NetworkTimeoutSeconds  int
-	PageLoadTimeoutSeconds int
+	Collector             *colly.Collector
+	Transport             *http.Transport
+	TimeoutSeconds        int
+	LoadingTimeoutSeconds int
 }
 
 func (s *CollyScraper) Init() error {
 	log.Infoln("Colly initialization")
 	s.Transport = &http.Transport{
 		DialContext: (&net.Dialer{
-			Timeout: time.Second * time.Duration(s.BrowserTimeoutSeconds),
+			Timeout: time.Second * time.Duration(s.TimeoutSeconds),
 		}).DialContext,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: time.Duration(s.NetworkTimeoutSeconds) * time.Second,
+		TLSHandshakeTimeout:   2 * time.Second,
+		ExpectContinueTimeout: time.Duration(s.TimeoutSeconds) * time.Second,
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 	}
 

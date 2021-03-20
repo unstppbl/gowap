@@ -14,12 +14,11 @@ func main() {
 
 	var url, appsJSONPath, scraper string
 	var help, rawOutput bool
-	var browserTimeoutSeconds, networkTimeoutSeconds, pageLoadTimeoutSeconds int
+	var timeoutSeconds, loadingTimeoutSeconds int
 	flag.StringVar(&appsJSONPath, "file", "", "Path to override default technologies.json file")
 	flag.StringVar(&scraper, "scraper", "rod", "Choose scraper between rod (default) and colly")
-	flag.IntVar(&browserTimeoutSeconds, "timeout", 4, "Global timeout in seconds (network + page loading)")
-	flag.IntVar(&networkTimeoutSeconds, "nttimeout", 2, "Timeout in seconds for the network connection to the url")
-	flag.IntVar(&pageLoadTimeoutSeconds, "pgtimeout", 2, "Timeout in seconds for the page loading by the browser")
+	flag.IntVar(&timeoutSeconds, "timeout", 3, "Timeout in seconds for fetching the url")
+	flag.IntVar(&loadingTimeoutSeconds, "loadtimeout", 3, "Timeout in seconds for loading the page")
 	flag.BoolVar(&rawOutput, "raw", false, "Raw output (JSON by default)")
 	flag.BoolVar(&help, "h", false, "Help")
 	flag.Parse()
@@ -53,9 +52,8 @@ func main() {
 	config := gowap.NewConfig()
 	config.AppsJSONPath = appsJSONPath
 	config.JSON = !rawOutput
-	config.BrowserTimeoutSeconds = browserTimeoutSeconds
-	config.NetworkTimeoutSeconds = networkTimeoutSeconds
-	config.PageLoadTimeoutSeconds = pageLoadTimeoutSeconds
+	config.TimeoutSeconds = timeoutSeconds
+	config.LoadingTimeoutSeconds = loadingTimeoutSeconds
 	config.Scraper = scraper
 
 	wapp, err := gowap.Init(config)
