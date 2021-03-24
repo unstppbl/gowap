@@ -11,11 +11,10 @@ import (
 )
 
 type RodScraper struct {
-	Browser                *rod.Browser
-	Page                   *rod.Page
-	BrowserTimeoutSeconds  int
-	NetworkTimeoutSeconds  int
-	PageLoadTimeoutSeconds int
+	Browser               *rod.Browser
+	Page                  *rod.Page
+	TimeoutSeconds        int
+	LoadingTimeoutSeconds int
 }
 
 func (s *RodScraper) CanRenderPage() bool {
@@ -23,19 +22,13 @@ func (s *RodScraper) CanRenderPage() bool {
 }
 
 func (s *RodScraper) Init() error {
-	errRod := rod.Try(func() {
+	log.Infoln("Rod initialization")
+	return rod.Try(func() {
 		s.Browser = rod.
 			New().
-			Timeout(time.Duration(s.BrowserTimeoutSeconds) * time.Second).
-			MustConnect()
+			MustConnect().
+			MustIgnoreCertErrors(true)
 	})
-	if errRod != nil {
-		log.Errorf("Error while connecting Browser : %s", errRod.Error())
-		return errRod
-	}
-
-	s.Browser.IgnoreCertErrors(true)
-	return nil
 }
 
 func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
@@ -49,7 +42,7 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 
 	errRod := rod.Try(func() {
 		s.Page.
-			Timeout(time.Duration(s.NetworkTimeoutSeconds) * time.Second).
+			Timeout(time.Duration(s.TimeoutSeconds) * time.Second).
 			MustNavigate(paramURL)
 	})
 	if errRod != nil {
@@ -59,7 +52,7 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 
 	wait()
 
-	scraped.URLs = append(scraped.URLs, ScrapedURL{e.Response.URL, e.Response.Status})
+	scraped.URLs = ScrapedURL{e.Response.URL, e.Response.Status}
 	scraped.Headers = make(map[string][]string)
 	for header, value := range e.Response.Headers {
 		lowerCaseKey := strings.ToLower(header)
@@ -71,7 +64,7 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 	//TODO : headers and cookies could be parsed before load completed
 	errRod = rod.Try(func() {
 		s.Page.
-			Timeout(time.Duration(s.PageLoadTimeoutSeconds) * time.Second).
+			Timeout(time.Duration(s.LoadingTimeoutSeconds) * time.Second).
 			MustWaitLoad()
 	})
 	if errRod != nil {

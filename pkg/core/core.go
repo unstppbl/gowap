@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	scraper "github.com/dranih/gowap/pkg/scraper"
@@ -27,16 +29,29 @@ var embedPath = "assets/technologies.json"
 // Config for gowap
 type Config struct {
 	AppsJSONPath           string
-	BrowserTimeoutSeconds  int
-	NetworkTimeoutSeconds  int
-	PageLoadTimeoutSeconds int
+	TimeoutSeconds         int
+	LoadingTimeoutSeconds  int
 	JSON                   bool
 	Scraper                string
+	MaxDepth               int
+	visitedLinks           int
+	MaxVisitedLinks        int
+	MsDelayBetweenRequests int
 }
 
 // NewConfig struct with default values
 func NewConfig() *Config {
-	return &Config{AppsJSONPath: "", BrowserTimeoutSeconds: 4, NetworkTimeoutSeconds: 3, PageLoadTimeoutSeconds: 3, JSON: true, Scraper: "rod"}
+	return &Config{
+		AppsJSONPath:           "",
+		TimeoutSeconds:         3,
+		LoadingTimeoutSeconds:  3,
+		JSON:                   true,
+		Scraper:                "rod",
+		MaxDepth:               0,
+		visitedLinks:           0,
+		MaxVisitedLinks:        10,
+		MsDelayBetweenRequests: 100,
+	}
 }
 
 type temp struct {
@@ -74,24 +89,25 @@ type Wappalyzer struct {
 	Scraper    scraper.Scraper
 	Apps       map[string]*application
 	Categories map[string]*category
-	JSON       bool
+	Config     *Config
 }
 
 // Init initializes wappalyzer
 func Init(config *Config) (wapp *Wappalyzer, err error) {
-	wapp = &Wappalyzer{}
-	// Selecting scraper
+	wapp = &Wappalyzer{Config: config}
+	// Scraper initialization
 	switch config.Scraper {
 	case "colly":
-		wapp.Scraper = &scraper.CollyScraper{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
+		wapp.Scraper = &scraper.CollyScraper{TimeoutSeconds: config.TimeoutSeconds, LoadingTimeoutSeconds: config.LoadingTimeoutSeconds}
+		err = wapp.Scraper.Init()
 	case "rod":
-		wapp.Scraper = &scraper.RodScraper{BrowserTimeoutSeconds: config.BrowserTimeoutSeconds, NetworkTimeoutSeconds: config.NetworkTimeoutSeconds, PageLoadTimeoutSeconds: config.PageLoadTimeoutSeconds}
+		wapp.Scraper = &scraper.RodScraper{TimeoutSeconds: config.TimeoutSeconds, LoadingTimeoutSeconds: config.LoadingTimeoutSeconds}
+		err = wapp.Scraper.Init()
 	default:
 		log.Errorf("Unknown scraper %s", config.Scraper)
-		return wapp, errors.New("UnknownScraper")
+		err = errors.New("UnknownScraper")
 	}
 
-	err = wapp.Scraper.Init()
 	if err != nil {
 		log.Errorf("Scraper %s initialization failed : %v", config.Scraper, err)
 		return nil, err
@@ -117,7 +133,6 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 	}
 
 	err = parseTechnologiesFile(&appsFile, wapp)
-	wapp.JSON = config.JSON
 	return wapp, err
 }
 
@@ -182,22 +197,101 @@ type output struct {
 	Technologies []technology         `json:"technologies,omitempty"`
 }
 
-// Analyze retrieves application stack used on the provided web-site
 func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error) {
+	detectedApplications := &detected{new(sync.Mutex), make(map[string]*resultApp)}
+	toVisitURLs := make(map[string]struct{})
+	globalVisitedURLs := make(map[string]scraper.ScrapedURL)
+	err = errors.New("analyzePageFailed")
 
+	paramURL = strings.TrimRight(paramURL, "/")
+	toVisitURLs[paramURL] = struct{}{}
+	for depth := 0; depth <= wapp.Config.MaxDepth; depth++ {
+		log.Printf("Depth : %d", depth)
+		links, visitedURLs, retErr := analyzePages(toVisitURLs, wapp, detectedApplications)
+		//If we have at least one page ok => no error
+		if err != nil && retErr == nil {
+			err = nil
+		}
+
+		for visitedURL, result := range visitedURLs {
+			globalVisitedURLs[visitedURL] = result
+		}
+		if depth < wapp.Config.MaxDepth {
+			toVisitURLs = make(map[string]struct{})
+			for link := range links {
+				if _, exists := globalVisitedURLs[link]; !exists {
+					toVisitURLs[link] = struct{}{}
+				}
+			}
+		}
+	}
+	if err == nil {
+		res := &output{}
+		for _, visited := range globalVisitedURLs {
+			res.URLs = append(res.URLs, visited)
+		}
+		for _, app := range detectedApplications.Apps {
+			res.Technologies = append(res.Technologies, app.technology)
+		}
+		if wapp.Config.JSON {
+			return json.MarshalToString(res)
+		}
+		return res, err
+	} else {
+		return nil, err
+	}
+}
+
+func analyzePages(paramURLs map[string]struct{}, wapp *Wappalyzer, detectedApplications *detected) (detectedLinks map[string]struct{}, visitedURLs map[string]scraper.ScrapedURL, err error) {
+	visitedURLs = make(map[string]scraper.ScrapedURL)
+	detectedLinks = make(map[string]struct{})
+	err = errors.New("AnalyzePageFailed")
+	for paramURL := range paramURLs {
+		links, scrapedURL, retErr := analyzePage(paramURL, wapp, detectedApplications)
+		//If we have at least one page ok => no error
+		if err != nil && retErr == nil {
+			err = nil
+		}
+		if scrapedURL != nil {
+			visitedURLs[paramURL] = *scrapedURL
+			if links != nil {
+				for link := range *links {
+					if _, exists := detectedLinks[link]; !exists {
+						detectedLinks[link] = struct{}{}
+					}
+				}
+			}
+		}
+		wapp.Config.visitedLinks = wapp.Config.visitedLinks + 1
+		if wapp.Config.visitedLinks >= wapp.Config.MaxVisitedLinks {
+			log.Printf("Visited max number of pages : %d", wapp.Config.MaxVisitedLinks)
+			break
+		}
+		time.Sleep(time.Duration(wapp.Config.MsDelayBetweenRequests) * time.Millisecond)
+	}
+	return detectedLinks, visitedURLs, err
+}
+
+// Analyze retrieves application stack used on the provided web-site
+func analyzePage(paramURL string, wapp *Wappalyzer, detectedApplications *detected) (links *map[string]struct{}, scrapedURL *scraper.ScrapedURL, err error) {
+	log.Printf("Analyzing %s", paramURL)
 	if !validateURL(paramURL) {
 		log.Errorf("URL not valid : %s", paramURL)
-		return nil, errors.New("UrlNotValid")
+		return nil, &scraper.ScrapedURL{URL: paramURL, Status: 400}, errors.New("UrlNotValid")
 	}
 
-	detectedApplications := &detected{new(sync.Mutex), make(map[string]*resultApp)}
 	scraped, err := wapp.Scraper.Scrape(paramURL)
 	if err != nil {
 		log.Errorf("Scraper failed : %v", err)
-		return nil, err
+		return nil, &scraper.ScrapedURL{URL: paramURL, Status: 400}, err
 	}
 
 	canRenderPage := wapp.Scraper.CanRenderPage()
+	reader := strings.NewReader(scraped.HTML)
+	doc, err := goquery.NewDocumentFromReader(reader)
+	if err == nil {
+		links = getLinksSlice(doc, paramURL)
+	}
 
 	for _, app := range wapp.Apps {
 		wg.Add(1)
@@ -205,10 +299,10 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 			defer wg.Done()
 			analyzeURL(app, paramURL, detectedApplications)
 			if canRenderPage && app.Js != nil {
-				analyseJS(app, wapp.Scraper, detectedApplications)
+				analyzeJS(app, wapp.Scraper, detectedApplications)
 			}
 			if canRenderPage && app.Dom != nil {
-				analyseDom(app, scraped.HTML, detectedApplications)
+				analyzeDom(app, doc, detectedApplications)
 			}
 			if app.HTML != nil {
 				analyzeHTML(app, scraped.HTML, detectedApplications)
@@ -226,7 +320,7 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 				analyzeMeta(app, scraped.Meta, detectedApplications)
 			}
 			if len(scraped.DNS) > 0 && app.DNS != nil {
-				analyseDNS(app, scraped.DNS, detectedApplications)
+				analyzeDNS(app, scraped.DNS, detectedApplications)
 			}
 		}(app)
 	}
@@ -241,24 +335,15 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 			resolveImplies(&wapp.Apps, &detectedApplications.Apps, app.implies)
 		}
 	}
-	res := &output{}
-	res.URLs = append(res.URLs, scraped.URLs...)
-	for _, app := range detectedApplications.Apps {
-		// log.Printf("URL: %-25s DETECTED APP: %-20s VERSION: %-8s CATEGORIES: %v", url, app.Name, app.Version, app.Categories)
-		res.Technologies = append(res.Technologies, app.technology)
-	}
-	if wapp.JSON {
-		return json.MarshalToString(res)
-	}
-	return res, nil
+	return links, &scraped.URLs, nil
 }
 
-func analyzeURL(app *application, url string, detectedApplications *detected) {
+func analyzeURL(app *application, paramURL string, detectedApplications *detected) {
 	patterns := parsePatterns(app.URL)
 	for _, v := range patterns {
 		for _, pattrn := range v {
-			if pattrn.regex != nil && pattrn.regex.MatchString(url) {
-				version := detectVersion(pattrn, &url)
+			if pattrn.regex != nil && pattrn.regex.MatchString(paramURL) {
+				version := detectVersion(pattrn, &paramURL)
 				addApp(app, detectedApplications, version, pattrn.confidence)
 			}
 		}
@@ -343,8 +428,8 @@ func analyzeMeta(app *application, metas map[string][]string, detectedApplicatio
 	}
 }
 
-// analyseJS evals the JS properties and tries to match
-func analyseJS(app *application, scraper scraper.Scraper, detectedApplications *detected) {
+// analyzeJS evals the JS properties and tries to match
+func analyzeJS(app *application, scraper scraper.Scraper, detectedApplications *detected) {
 	patterns := parsePatterns(app.Js)
 	for jsProp, v := range patterns {
 		value, err := scraper.EvalJS(jsProp)
@@ -359,42 +444,38 @@ func analyseJS(app *application, scraper scraper.Scraper, detectedApplications *
 	}
 }
 
-// analyseDom evals the DOM tries to match
-func analyseDom(app *application, html string, detectedApplications *detected) {
-	reader := strings.NewReader(html)
-	doc, err := goquery.NewDocumentFromReader(reader)
-	if err == nil {
-		for domSelector, v1 := range app.Dom {
-			doc.Find(domSelector).First().Each(func(i int, s *goquery.Selection) {
-				for domType, v := range v1 {
-					patterns := parsePatterns(v)
-					for attribute, pattrns := range patterns {
-						for _, pattrn := range pattrns {
-							var value string
-							var exists bool
-							switch domType {
-							case "text":
-								value = s.Text()
-								exists = true
-							case "properties":
-								// Not implemented, should be done into the browser to get element properties
-							case "attributes":
-								value, exists = s.Attr(attribute)
-							}
-							if exists && pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
-								version := detectVersion(pattrn, &value)
-								addApp(app, detectedApplications, version, pattrn.confidence)
-							}
+// analyzeDom evals the DOM tries to match
+func analyzeDom(app *application, doc *goquery.Document, detectedApplications *detected) {
+	for domSelector, v1 := range app.Dom {
+		doc.Find(domSelector).First().Each(func(i int, s *goquery.Selection) {
+			for domType, v := range v1 {
+				patterns := parsePatterns(v)
+				for attribute, pattrns := range patterns {
+					for _, pattrn := range pattrns {
+						var value string
+						var exists bool
+						switch domType {
+						case "text":
+							value = s.Text()
+							exists = true
+						case "properties":
+							// Not implemented, should be done into the browser to get element properties
+						case "attributes":
+							value, exists = s.Attr(attribute)
+						}
+						if exists && pattrn.str == "" || (pattrn.regex != nil && pattrn.regex.MatchString(value)) {
+							version := detectVersion(pattrn, &value)
+							addApp(app, detectedApplications, version, pattrn.confidence)
 						}
 					}
 				}
-			})
-		}
+			}
+		})
 	}
 }
 
-// analyseDNS tries to match dns records
-func analyseDNS(app *application, dns map[string][]string, detectedApplications *detected) {
+// analyzeDNS tries to match dns records
+func analyzeDNS(app *application, dns map[string][]string, detectedApplications *detected) {
 	patterns := parsePatterns(app.DNS)
 	for dnsType, v := range patterns {
 		dnsTypeUpperCase := strings.ToUpper(dnsType)
@@ -565,11 +646,30 @@ func parseCategories(app *application, categoriesCatalog *map[string]*category) 
 	}
 }
 
-func validateURL(url string) bool {
+func validateURL(paramURL string) bool {
 	regex, err := regexp.Compile(`^(?:http(s)?:\/\/)?[\w.-]+(?:\.[\w\.-]+)+[\w\-\._~:/?#[\]@!\$&'\(\)\*\+,;=.]+$`)
 	ret := false
 	if err == nil {
-		ret = regex.MatchString(url)
+		ret = regex.MatchString(paramURL)
 	}
 	return ret
+}
+
+// getLinksSlice parses query doc and return links
+func getLinksSlice(doc *goquery.Document, currentURL string) *map[string]struct{} {
+	ret := make(map[string]struct{})
+	parsedCurrentURL, _ := url.Parse(currentURL)
+	var protocolRegex = regexp.MustCompile(`^https?`)
+
+	doc.Find("body a").Each(func(index int, item *goquery.Selection) {
+		rawLink, _ := item.Attr("href")
+		parsedLink, _ := url.Parse(rawLink)
+		if parsedLink.Scheme == "" {
+			parsedLink.Scheme = parsedCurrentURL.Scheme
+		}
+		if matched := protocolRegex.MatchString(parsedLink.Scheme); matched && (parsedLink.Host == "" || parsedLink.Host == parsedCurrentURL.Host) {
+			ret[parsedLink.Scheme+"://"+parsedCurrentURL.Host+strings.TrimRight(parsedLink.Path, "/")] = struct{}{}
+		}
+	})
+	return &ret
 }

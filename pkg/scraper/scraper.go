@@ -12,7 +12,7 @@ type ScrapedURL struct {
 }
 
 type ScrapedData struct {
-	URLs    []ScrapedURL
+	URLs    ScrapedURL
 	HTML    string
 	Headers map[string][]string
 	Scripts []string
