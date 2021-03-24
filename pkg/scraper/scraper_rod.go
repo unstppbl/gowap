@@ -52,7 +52,7 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 
 	wait()
 
-	scraped.URLs = append(scraped.URLs, ScrapedURL{e.Response.URL, e.Response.Status})
+	scraped.URLs = ScrapedURL{e.Response.URL, e.Response.Status}
 	scraped.Headers = make(map[string][]string)
 	for header, value := range e.Response.Headers {
 		lowerCaseKey := strings.ToLower(header)

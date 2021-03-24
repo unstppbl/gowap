@@ -56,7 +56,7 @@ func (s *CollyScraper) Scrape(paramURL string) (*ScrapedData, error) {
 
 	s.Collector.OnResponse(func(r *colly.Response) {
 		// log.Infof("Visited %s", r.Request.URL)
-		scraped.URLs = append(scraped.URLs, ScrapedURL{r.Request.URL.String(), r.StatusCode})
+		scraped.URLs = ScrapedURL{r.Request.URL.String(), r.StatusCode}
 		scraped.Headers = make(map[string][]string)
 		for k, v := range *r.Headers {
 			lowerCaseKey := strings.ToLower(k)

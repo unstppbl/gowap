@@ -333,6 +333,27 @@ func TestParsePattern(t *testing.T) {
 	parsePatterns(patterns2)
 }
 
+func TestRecursivity(t *testing.T) {
+	url := "https://scrapethissite.com/"
+	//url := "https://quotes.toscrape.com/"
+	config := NewConfig()
+	config.MaxDepth = 1
+	config.MaxVisitedLinks = 3
+	config.Scraper = "colly"
+	wapp, err := Init(config)
+	if assert.NoError(t, err, "GoWap Init error") {
+		res, err := wapp.Analyze(url)
+		log.Printf("res : %v", res)
+		if assert.NoError(t, err, "GoWap Analyze error") {
+			var output output
+			err = json.UnmarshalFromString(res.(string), &output)
+			if assert.NoError(t, err, "Unmarshal error") {
+				assert.Equal(t, 3, len(output.URLs), "Should have parsed 3 URL")
+			}
+		}
+	}
+}
+
 func MockHTTP(content string) *httptest.Server {
 	ts := httptest.NewServer(
 		http.HandlerFunc(
