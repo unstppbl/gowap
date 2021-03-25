@@ -78,6 +78,9 @@ github.com/ysmood/gson
 # github.com/ysmood/leakless v0.6.12
 github.com/ysmood/leakless
 github.com/ysmood/leakless/lib
+# go.zoe.im/surferua v0.0.3
+## explicit
+go.zoe.im/surferua
 # golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
 ## explicit
 golang.org/x/net/context

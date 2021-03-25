@@ -15,6 +15,8 @@ type RodScraper struct {
 	Page                  *rod.Page
 	TimeoutSeconds        int
 	LoadingTimeoutSeconds int
+	UserAgent             string
+	protoUserAgent        *proto.NetworkSetUserAgentOverride
 }
 
 func (s *RodScraper) CanRenderPage() bool {
@@ -24,6 +26,7 @@ func (s *RodScraper) CanRenderPage() bool {
 func (s *RodScraper) Init() error {
 	log.Infoln("Rod initialization")
 	return rod.Try(func() {
+		s.protoUserAgent = &proto.NetworkSetUserAgentOverride{UserAgent: s.UserAgent}
 		s.Browser = rod.
 			New().
 			MustConnect().
@@ -43,6 +46,7 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 	errRod := rod.Try(func() {
 		s.Page.
 			Timeout(time.Duration(s.TimeoutSeconds) * time.Second).
+			MustSetUserAgent(s.protoUserAgent).
 			MustNavigate(paramURL)
 	})
 	if errRod != nil {

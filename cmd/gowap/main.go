@@ -12,11 +12,12 @@ import (
 
 func main() {
 
-	var url, appsJSONPath, scraper string
+	var url, appsJSONPath, scraper, userAgent string
 	var help, rawOutput bool
 	var timeoutSeconds, loadingTimeoutSeconds, maxDepth, maxVisitedLinks, msDelayBetweenRequests int
 	flag.StringVar(&appsJSONPath, "file", "", "Path to override default technologies.json file")
 	flag.StringVar(&scraper, "scraper", "rod", "Choose scraper between rod (default) and colly")
+	flag.StringVar(&userAgent, "useragent", "", "Override the user-agent string")
 	flag.IntVar(&timeoutSeconds, "timeout", 3, "Timeout in seconds for fetching the url")
 	flag.IntVar(&loadingTimeoutSeconds, "loadtimeout", 3, "Timeout in seconds for loading the page")
 	flag.IntVar(&maxDepth, "depth", 0, "Don't analyze page when depth superior to this number. Default (0) means no recursivity (only first page will be analyzed)")
@@ -61,6 +62,9 @@ func main() {
 	config.MaxVisitedLinks = maxVisitedLinks
 	config.MsDelayBetweenRequests = msDelayBetweenRequests
 	config.Scraper = scraper
+	if userAgent != "" {
+		config.UserAgent = userAgent
+	}
 
 	wapp, err := gowap.Init(config)
 	if err != nil {

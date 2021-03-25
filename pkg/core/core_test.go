@@ -343,7 +343,6 @@ func TestRecursivity(t *testing.T) {
 	wapp, err := Init(config)
 	if assert.NoError(t, err, "GoWap Init error") {
 		res, err := wapp.Analyze(url)
-		log.Printf("res : %v", res)
 		if assert.NoError(t, err, "GoWap Analyze error") {
 			var output output
 			err = json.UnmarshalFromString(res.(string), &output)
@@ -352,6 +351,45 @@ func TestRecursivity(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestRobot(t *testing.T) {
+
+	var robotsFile = `
+User-agent: *
+Allow: /allowed
+Disallow: /disallowed
+Disallow: /allowed*q=
+`
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(robotsFile))
+	})
+
+	mux.HandleFunc("/allowed", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("allowed"))
+	})
+
+	mux.HandleFunc("/disallowed", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("disallowed"))
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	config := NewConfig()
+	config.Scraper = "colly"
+	wapp, err := Init(config)
+	if assert.NoError(t, err, "GoWap Init error") {
+		_, err := wapp.Analyze(ts.URL + "/allowed")
+		assert.NoError(t, err, "Robot should allowed this url")
+		_, err = wapp.Analyze(ts.URL + "/disallowed")
+		assert.Error(t, err, "Robot should block this url")
+	}
+	//Robot should be tested for Rod also **not implemented**
 }
 
 func MockHTTP(content string) *httptest.Server {

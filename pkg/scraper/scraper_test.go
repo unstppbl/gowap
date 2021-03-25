@@ -9,6 +9,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+/* Missing tests :
+- Colly :
+	* Timeout
+	* Bad Url
+	* Robots
+	* User Agent
+- Rod :
+	* Robots (not implemented)
+	* User Agent
+*/
+
 func TestCollyScraper(t *testing.T) {
 	scraperTest := &CollyScraper{}
 
