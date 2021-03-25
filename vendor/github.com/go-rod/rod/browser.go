@@ -175,7 +175,7 @@ func (b *Browser) Close() error {
 	return proto.TargetDisposeBrowserContext{BrowserContextID: b.BrowserContextID}.Call(b)
 }
 
-// Page creates a new browser tab. If url is empty, the default target will be "about:blank".
+// Page creates a new browser tab. If opts.URL is empty, the default target will be "about:blank".
 func (b *Browser) Page(opts proto.TargetCreateTarget) (p *Page, err error) {
 	req := opts
 	req.BrowserContextID = b.BrowserContextID
@@ -300,15 +300,7 @@ func (b *Browser) PageFromTarget(targetID proto.TargetTargetID) (*Page, error) {
 	return page, nil
 }
 
-// EachEvent of the specified event types, if any callback returns true the wait function will resolve,
-// The type of each callback is (? means optional):
-//
-//     func(proto.Event, proto.TargetSessionID?) bool?
-//
-// You can listen to multiple event types at the same time like:
-//
-//     browser.EachEvent(func(a *proto.A) {}, func(b *proto.B) {})
-//
+// EachEvent is similar to Page.EachEvent, but catches events of the entire browser.
 func (b *Browser) EachEvent(callbacks ...interface{}) (wait func()) {
 	return b.eachEvent("", callbacks...)
 }
@@ -467,8 +459,12 @@ func (b *Browser) GetCookies() ([]*proto.NetworkCookie, error) {
 	return res.Cookies, nil
 }
 
-// SetCookies to the browser
+// SetCookies to the browser. If the cookies is nil it will clear all the cookies.
 func (b *Browser) SetCookies(cookies []*proto.NetworkCookieParam) error {
+	if cookies == nil {
+		return proto.StorageClearCookies{BrowserContextID: b.BrowserContextID}.Call(b)
+	}
+
 	return proto.StorageSetCookies{
 		Cookies:          cookies,
 		BrowserContextID: b.BrowserContextID,

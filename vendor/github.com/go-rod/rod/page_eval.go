@@ -44,11 +44,13 @@ type EvalOptions struct {
 
 	// Whether execution should be treated as initiated by user in the UI.
 	UserGesture bool
-
-	jsHelper *js.Function
 }
 
 // Eval creates a EvalOptions with ByValue set to true.
+//
+// When an arg in the args is a *js.Function, the arg will be cached on the page's js context.
+// When the arg.Name exists in the page's cache, it reuse the cache without sending the definition to the browser again.
+// Useful when you need to eval a huge js expression many times.
 func Eval(js string, args ...interface{}) *EvalOptions {
 	return &EvalOptions{
 		ByValue:      true,
@@ -57,28 +59,21 @@ func Eval(js string, args ...interface{}) *EvalOptions {
 		JS:           js,
 		JSArgs:       args,
 		UserGesture:  false,
-		jsHelper:     nil,
 	}
 }
 
-// EvalHelper creates a special EvalOptions that will cache the fn on the page js context.
-// Useful when you want to extend the helpers of Rod, such as create your own selector helpers.
-func EvalHelper(fn *js.Function, args ...interface{}) *EvalOptions {
+func evalHelper(fn *js.Function, args ...interface{}) *EvalOptions {
 	return &EvalOptions{
-		ByValue:  true,
-		JSArgs:   args,
-		JS:       `({fn}, ...args) => fn.apply(this, args)`,
-		jsHelper: fn,
+		ByValue: true,
+		JSArgs:  append([]interface{}{fn}, args...),
+		JS:      `(f, ...args) => f.apply(this, args)`,
 	}
 }
 
 // String interface
 func (e *EvalOptions) String() string {
 	fn := e.JS
-
-	if e.jsHelper != nil {
-		fn = "rod." + e.jsHelper.Name
-	}
+	args := e.JSArgs
 
 	paramsStr := ""
 	thisStr := ""
@@ -86,8 +81,13 @@ func (e *EvalOptions) String() string {
 	if e.ThisObj != nil {
 		thisStr = e.ThisObj.Description
 	}
-	if len(e.JSArgs) > 0 {
-		paramsStr = strings.Trim(mustToJSONForDev(e.JSArgs), "[]\r\n")
+	if len(args) > 0 {
+		if f, ok := args[0].(*js.Function); ok {
+			fn = "rod." + f.Name
+			args = e.JSArgs[1:]
+		}
+
+		paramsStr = strings.Trim(mustToJSONForDev(args), "[]\r\n")
 	}
 
 	return fmt.Sprintf("%s(%s) %s", fn, paramsStr, thisStr)
@@ -242,23 +242,21 @@ func (p *Page) formatArgs(opts *EvalOptions) ([]*proto.RuntimeCallArgument, erro
 	for _, arg := range opts.JSArgs {
 		if obj, ok := arg.(*proto.RuntimeRemoteObject); ok { // remote object
 			formated = append(formated, &proto.RuntimeCallArgument{ObjectID: obj.ObjectID})
+		} else if obj, ok := arg.(*js.Function); ok { // js helper
+			id, err := p.ensureJSHelper(obj)
+			if err != nil {
+				return nil, err
+			}
+			formated = append(formated, &proto.RuntimeCallArgument{ObjectID: id})
 		} else { // plain json data
 			formated = append(formated, &proto.RuntimeCallArgument{Value: gson.New(arg)})
 		}
 	}
 
-	if opts.jsHelper != nil {
-		id, err := p.ensureJSHelper(opts.jsHelper)
-		if err != nil {
-			return nil, err
-		}
-
-		formated = append([]*proto.RuntimeCallArgument{{ObjectID: id}}, formated...)
-	}
-
 	return formated, nil
 }
 
+// Check the doc of EvalHelper
 func (p *Page) ensureJSHelper(fn *js.Function) (proto.RuntimeRemoteObjectID, error) {
 	jsCtxID, err := p.getJSCtxID()
 	if err != nil {
@@ -302,10 +300,10 @@ func (p *Page) ensureJSHelper(fn *js.Function) (proto.RuntimeRemoteObjectID, err
 			Arguments: []*proto.RuntimeCallArgument{{ObjectID: fns}},
 
 			FunctionDeclaration: fmt.Sprintf(
-				// We wrap an extra {fn: fn} here to reduce the response body size,
 				// we only need the object id, but the cdp will return the whole function string.
-				"functions => { functions.%s = %s; return { fn: functions.%s } }",
-				fn.Name, fn.Definition, fn.Name,
+				// So we override the toString to reduce the overhead.
+				"functions => { const f = functions.%s = %s; f.toString = () => 'fn'; return f }",
+				fn.Name, fn.Definition,
 			),
 		}.Call(p)
 		if err != nil {
@@ -319,6 +317,7 @@ func (p *Page) ensureJSHelper(fn *js.Function) (proto.RuntimeRemoteObjectID, err
 	return id, nil
 }
 
+// Returns the page's window object, the page can be an iframe
 func (p *Page) getJSCtxID() (proto.RuntimeRemoteObjectID, error) {
 	p.jsCtxLock.Lock()
 	defer p.jsCtxLock.Unlock()
