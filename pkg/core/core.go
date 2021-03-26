@@ -303,6 +303,11 @@ func analyzePage(paramURL string, wapp *Wappalyzer, detectedApplications *detect
 	if err == nil {
 		links = getLinksSlice(doc, paramURL)
 	}
+	//Follow redirects
+	if scraped.URLs.URL != paramURL {
+		(*links)[strings.TrimRight(scraped.URLs.URL, "/")] = struct{}{}
+		scraped.URLs.URL = paramURL
+	}
 
 	for _, app := range wapp.Apps {
 		wg.Add(1)

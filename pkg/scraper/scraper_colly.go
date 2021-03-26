@@ -45,7 +45,7 @@ func (s *CollyScraper) Init() error {
 	s.Collector.WithTransport(s.Transport)
 
 	extensions.Referer(s.Collector)
-	extensions.RandomUserAgent(s.Collector)
+	//extensions.RandomUserAgent(s.Collector)
 
 	return nil
 }
