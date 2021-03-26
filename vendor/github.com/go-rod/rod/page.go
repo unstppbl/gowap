@@ -109,10 +109,12 @@ func (p *Page) Cookies(urls []string) ([]*proto.NetworkCookie, error) {
 	return res.Cookies, nil
 }
 
-// SetCookies of the page.
+// SetCookies is similar to Browser.SetCookies .
 func (p *Page) SetCookies(cookies []*proto.NetworkCookieParam) error {
-	err := proto.NetworkSetCookies{Cookies: cookies}.Call(p)
-	return err
+	if cookies == nil {
+		return proto.NetworkClearBrowserCookies{}.Call(p)
+	}
+	return proto.NetworkSetCookies{Cookies: cookies}.Call(p)
 }
 
 // SetExtraHeaders whether to always send extra HTTP headers with the requests from this page.
@@ -423,7 +425,22 @@ func (p *Page) WaitOpen() func() (*Page, error) {
 	}
 }
 
-// EachEvent is similar to Browser.EachEvent, but only catches events for current page.
+// EachEvent of the specified event types, if any callback returns true the wait function will resolve,
+// The type of each callback is (? means optional):
+//
+//     func(proto.Event, proto.TargetSessionID?) bool?
+//
+// You can listen to multiple event types at the same time like:
+//
+//     browser.EachEvent(func(a *proto.A) {}, func(b *proto.B) {})
+//
+// Such as subscribe the events to know when the navigation is complete or when the page is rendered.
+// Here's an example to dismiss all dialogs/alerts on the page:
+//
+//      go page.EachEvent(func(e *proto.PageJavascriptDialogOpening) {
+//          _ = proto.PageHandleJavaScriptDialog{ Accept: false, PromptText: ""}.Call(page)
+//      })()
+//
 func (p *Page) EachEvent(callbacks ...interface{}) (wait func()) {
 	return p.browser.Context(p.ctx).eachEvent(p.SessionID, callbacks...)
 }
@@ -501,7 +518,7 @@ func (p *Page) WaitRequestIdle(d time.Duration, includes, excludes []string) fun
 
 // WaitIdle waits until the next window.requestIdleCallback is called.
 func (p *Page) WaitIdle(timeout time.Duration) (err error) {
-	_, err = p.Evaluate(EvalHelper(js.WaitIdle, timeout.Seconds()).ByPromise())
+	_, err = p.Evaluate(evalHelper(js.WaitIdle, timeout.Seconds()).ByPromise())
 	return err
 }
 
@@ -516,7 +533,7 @@ func (p *Page) WaitRepaint() error {
 // WaitLoad waits for the `window.onload` event, it returns immediately if the event is already fired.
 func (p *Page) WaitLoad() error {
 	defer p.tryTrace(TraceTypeWait, "load")()
-	_, err := p.Evaluate(EvalHelper(js.WaitLoad).ByPromise())
+	_, err := p.Evaluate(evalHelper(js.WaitLoad).ByPromise())
 	return err
 }
 
@@ -524,7 +541,7 @@ func (p *Page) WaitLoad() error {
 func (p *Page) AddScriptTag(url, content string) error {
 	hash := md5.Sum([]byte(url + content))
 	id := hex.EncodeToString(hash[:])
-	_, err := p.Evaluate(EvalHelper(js.AddScriptTag, id, url, content).ByPromise())
+	_, err := p.Evaluate(evalHelper(js.AddScriptTag, id, url, content).ByPromise())
 	return err
 }
 
@@ -532,7 +549,7 @@ func (p *Page) AddScriptTag(url, content string) error {
 func (p *Page) AddStyleTag(url, content string) error {
 	hash := md5.Sum([]byte(url + content))
 	id := hex.EncodeToString(hash[:])
-	_, err := p.Evaluate(EvalHelper(js.AddStyleTag, id, url, content).ByPromise())
+	_, err := p.Evaluate(evalHelper(js.AddStyleTag, id, url, content).ByPromise())
 	return err
 }
 
@@ -552,7 +569,7 @@ func (p *Page) EvalOnNewDocument(js string) (remove func() error, err error) {
 	return
 }
 
-// Wait js function until it returns true
+// Wait until the js returns true
 func (p *Page) Wait(this *proto.RuntimeRemoteObject, js string, params []interface{}) error {
 	return utils.Retry(p.ctx, p.sleeper(), func() (bool, error) {
 		opts := Eval(js, params...).This(this)

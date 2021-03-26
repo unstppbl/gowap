@@ -22,6 +22,13 @@ func TestCollyScraper(t *testing.T) {
 	res, err := scraperTest.Scrape("https://tengrinews.kz")
 	assert.NoError(t, err, "Colly scraping error")
 	assert.NotEmpty(t, res.HTML, "There should be some HTML content")
+
+	ts := MockHTTP(`<html><head><meta property="generator" content="TiddlyWiki" /></head><body><div></div></body></html>`)
+	defer ts.Close()
+	res, err = scraperTest.Scrape(ts.URL)
+	if assert.NoError(t, err, "Scrap should work") {
+		assert.NotEmpty(t, res.HTML, "There should be some HTML content")
+	}
 }
 
 func TestRodScraper(t *testing.T) {
@@ -58,12 +65,88 @@ func TestRodScraper(t *testing.T) {
 	_, err = scraperTest.Scrape(url)
 	assert.Error(t, err, "Bad URL should throw error")
 
+	url = ":foo"
+	err = scraperTest.Init()
+	assert.NoError(t, err, "GoWap Init error")
+	_, err = scraperTest.Scrape(url)
+	assert.Error(t, err, "Bad URL should throw error")
+
 	ts = MockHTTP(`<html><head><meta property="generator" content="TiddlyWiki" /></head><body><div></div></body></html>`)
 	defer ts.Close()
 	res, err = scraperTest.Scrape(ts.URL)
 	if assert.NoError(t, err, "Scrap should work") {
 		assert.Equal(t, "TiddlyWiki", res.Meta["generator"][0], "Scrap meta should work")
 	}
+	scraperTest.TimeoutSeconds = 0
+	_, err = scraperTest.Scrape(ts.URL + "/doesnotexists")
+	assert.Error(t, err, "Timeout should throw error")
+	scraperTest.TimeoutSeconds = 2
+}
+
+func TestRobot(t *testing.T) {
+
+	var robotsFile = `
+		User-agent: GoWap
+		Allow: /allowed
+		Disallow: /disallowed
+		Disallow: /allowed*q=
+		`
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(robotsFile))
+	})
+
+	mux.HandleFunc("/allowed", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("allowed"))
+	})
+
+	mux.HandleFunc("/disallowed", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("disallowed"))
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	collyScraperTest := &CollyScraper{UserAgent: "GoWap"}
+	err := collyScraperTest.Init()
+	if assert.NoError(t, err, "Scraper Init error") {
+		_, err := collyScraperTest.Scrape(ts.URL + "/allowed")
+		assert.NoError(t, err, "Robot should allowed this url")
+		_, err = collyScraperTest.Scrape(ts.URL + "/disallowed")
+		assert.Error(t, err, "Robot should block this url")
+	}
+
+	rodScraperTest := &RodScraper{TimeoutSeconds: 2, LoadingTimeoutSeconds: 2, UserAgent: "GoWap"}
+	err = rodScraperTest.Init()
+	if assert.NoError(t, err, "Scraper Init error") {
+		_, err := rodScraperTest.Scrape(ts.URL + "/allowed")
+		assert.NoError(t, err, "Robot should allowed this url")
+		_, err = rodScraperTest.Scrape(ts.URL + "/disallowed")
+		assert.Error(t, err, "Robot should block this url")
+		_, err = rodScraperTest.Scrape(ts.URL + "/allowed?q=1")
+		assert.Error(t, err, "Robot should block this url")
+	}
+
+	rodScraperTest.UserAgent = "NotListed"
+	_, err = rodScraperTest.Scrape(ts.URL + "/disallowed")
+	assert.NoError(t, err, "Robot should not block this url (user agent not listed)")
+
+	robotsFile = `Disallow: /`
+	mux2 := http.NewServeMux()
+	mux2.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(robotsFile))
+	})
+
+	ts2 := httptest.NewServer(mux2)
+	defer ts2.Close()
+
+	_, err = rodScraperTest.Scrape(ts2.URL)
+	assert.Error(t, err, "Bad robot format should throw an error")
+
 }
 
 func MockHTTP(content string) *httptest.Server {

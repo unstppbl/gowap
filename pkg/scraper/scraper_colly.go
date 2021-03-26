@@ -23,6 +23,7 @@ type CollyScraper struct {
 	Transport             *http.Transport
 	TimeoutSeconds        int
 	LoadingTimeoutSeconds int
+	UserAgent             string
 }
 
 func (s *CollyScraper) Init() error {
@@ -38,13 +39,13 @@ func (s *CollyScraper) Init() error {
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 	}
 
-	s.Collector = colly.NewCollector(
-		colly.IgnoreRobotsTxt(),
-	)
+	s.Collector = colly.NewCollector()
+	s.Collector.IgnoreRobotsTxt = false
+	s.Collector.UserAgent = s.UserAgent
 	s.Collector.WithTransport(s.Transport)
 
 	extensions.Referer(s.Collector)
-	extensions.RandomUserAgent(s.Collector)
+	//extensions.RandomUserAgent(s.Collector)
 
 	return nil
 }

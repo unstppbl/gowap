@@ -343,7 +343,6 @@ func TestRecursivity(t *testing.T) {
 	wapp, err := Init(config)
 	if assert.NoError(t, err, "GoWap Init error") {
 		res, err := wapp.Analyze(url)
-		log.Printf("res : %v", res)
 		if assert.NoError(t, err, "GoWap Analyze error") {
 			var output output
 			err = json.UnmarshalFromString(res.(string), &output)

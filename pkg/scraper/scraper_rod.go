@@ -1,11 +1,16 @@
 package scraper
 
 import (
+	"errors"
+	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
+	"github.com/temoto/robotstxt"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -15,6 +20,10 @@ type RodScraper struct {
 	Page                  *rod.Page
 	TimeoutSeconds        int
 	LoadingTimeoutSeconds int
+	UserAgent             string
+	protoUserAgent        *proto.NetworkSetUserAgentOverride
+	lock                  *sync.RWMutex
+	robotsMap             map[string]*robotstxt.RobotsData
 }
 
 func (s *RodScraper) CanRenderPage() bool {
@@ -24,6 +33,9 @@ func (s *RodScraper) CanRenderPage() bool {
 func (s *RodScraper) Init() error {
 	log.Infoln("Rod initialization")
 	return rod.Try(func() {
+		s.lock = &sync.RWMutex{}
+		s.robotsMap = make(map[string]*robotstxt.RobotsData)
+		s.protoUserAgent = &proto.NetworkSetUserAgentOverride{UserAgent: s.UserAgent}
 		s.Browser = rod.
 			New().
 			MustConnect().
@@ -35,6 +47,14 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 
 	scraped := &ScrapedData{}
 
+	parsedURL, err := url.Parse(paramURL)
+	if err != nil {
+		return scraped, err
+	}
+	if err := s.checkRobots(parsedURL); err != nil {
+		return scraped, err
+	}
+
 	var e proto.NetworkResponseReceived
 	s.Page = s.Browser.MustPage("")
 	wait := s.Page.WaitEvent(&e)
@@ -43,6 +63,7 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 	errRod := rod.Try(func() {
 		s.Page.
 			Timeout(time.Duration(s.TimeoutSeconds) * time.Second).
+			MustSetUserAgent(s.protoUserAgent).
 			MustNavigate(paramURL)
 	})
 	if errRod != nil {
@@ -117,4 +138,40 @@ func (s *RodScraper) EvalJS(jsProp string) (*string, error) {
 	} else {
 		return nil, err
 	}
+}
+
+// checkRobots function implements the robots.txt file checking for rod scraper
+// Borrowed from Colly : https://github.com/gocolly/colly/blob/e664321b4e5b94ed568999d37a7cbdef81d61bda/colly.go#L777
+// Return nil if no robot.txt or cannot be parsed
+func (s *RodScraper) checkRobots(u *url.URL) error {
+	s.lock.RLock()
+	robot, ok := s.robotsMap[u.Host]
+	s.lock.RUnlock()
+	if !ok {
+		// no robots file cached
+		resp, err := http.Get(u.Scheme + "://" + u.Host + "/robots.txt")
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		robot, err = robotstxt.FromResponse(resp)
+		if err != nil {
+			return err
+		}
+		s.lock.Lock()
+		s.robotsMap[u.Host] = robot
+		s.lock.Unlock()
+	}
+
+	uaGroup := robot.FindGroup(s.UserAgent)
+
+	eu := u.EscapedPath()
+	if u.RawQuery != "" {
+		eu += "?" + u.Query().Encode()
+	}
+	if !uaGroup.Test(eu) {
+		return errors.New("ErrRobotsTxtBlocked")
+	}
+	return nil
 }

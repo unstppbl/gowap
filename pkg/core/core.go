@@ -17,6 +17,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	jsoniter "github.com/json-iterator/go"
+	"go.zoe.im/surferua"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -37,6 +38,7 @@ type Config struct {
 	visitedLinks           int
 	MaxVisitedLinks        int
 	MsDelayBetweenRequests int
+	UserAgent              string
 }
 
 // NewConfig struct with default values
@@ -51,6 +53,7 @@ func NewConfig() *Config {
 		visitedLinks:           0,
 		MaxVisitedLinks:        10,
 		MsDelayBetweenRequests: 100,
+		UserAgent:              surferua.New().Desktop().Chrome().String(),
 	}
 }
 
@@ -98,10 +101,18 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 	// Scraper initialization
 	switch config.Scraper {
 	case "colly":
-		wapp.Scraper = &scraper.CollyScraper{TimeoutSeconds: config.TimeoutSeconds, LoadingTimeoutSeconds: config.LoadingTimeoutSeconds}
+		wapp.Scraper = &scraper.CollyScraper{
+			TimeoutSeconds:        config.TimeoutSeconds,
+			LoadingTimeoutSeconds: config.LoadingTimeoutSeconds,
+			UserAgent:             config.UserAgent,
+		}
 		err = wapp.Scraper.Init()
 	case "rod":
-		wapp.Scraper = &scraper.RodScraper{TimeoutSeconds: config.TimeoutSeconds, LoadingTimeoutSeconds: config.LoadingTimeoutSeconds}
+		wapp.Scraper = &scraper.RodScraper{
+			TimeoutSeconds:        config.TimeoutSeconds,
+			LoadingTimeoutSeconds: config.LoadingTimeoutSeconds,
+			UserAgent:             config.UserAgent,
+		}
 		err = wapp.Scraper.Init()
 	default:
 		log.Errorf("Unknown scraper %s", config.Scraper)
@@ -291,6 +302,11 @@ func analyzePage(paramURL string, wapp *Wappalyzer, detectedApplications *detect
 	doc, err := goquery.NewDocumentFromReader(reader)
 	if err == nil {
 		links = getLinksSlice(doc, paramURL)
+	}
+	//Follow redirects
+	if scraped.URLs.URL != paramURL {
+		(*links)[strings.TrimRight(scraped.URLs.URL, "/")] = struct{}{}
+		scraped.URLs.URL = paramURL
 	}
 
 	for _, app := range wapp.Apps {
