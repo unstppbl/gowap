@@ -84,7 +84,7 @@ github.com/ysmood/leakless/lib
 # go.zoe.im/surferua v0.0.3
 ## explicit
 go.zoe.im/surferua
-# golang.org/x/net v0.0.0-20210324205630-d1beb07c2056
+# golang.org/x/net v0.0.0-20210326220855-61e056675ecf
 ## explicit
 golang.org/x/net/context
 golang.org/x/net/html
