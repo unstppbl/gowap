@@ -9,6 +9,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestDnsScraping(t *testing.T) {
+	scraperTest := &CollyScraper{}
+	err := scraperTest.Init()
+	assert.NoError(t, err, "Scraper Init error")
+	res, err := scraperTest.Scrape("https://scrapethissite.com/")
+	assert.NoError(t, err, "Colly scraping error")
+	assert.NotEmpty(t, res.DNS, "There should be some DNS results")
+}
+
 func TestCollyScraper(t *testing.T) {
 	scraperTest := &CollyScraper{}
 
@@ -19,13 +28,16 @@ func TestCollyScraper(t *testing.T) {
 	err = scraperTest.Init()
 	assert.NoError(t, err, "Scraper Init error")
 
-	res, err := scraperTest.Scrape("https://tengrinews.kz")
-	assert.NoError(t, err, "Colly scraping error")
-	assert.NotEmpty(t, res.HTML, "There should be some HTML content")
-
-	ts := MockHTTP(`<html><head><meta property="generator" content="TiddlyWiki" /></head><body><div></div></body></html>`)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		c := &http.Cookie{Name: "test", Value: "testv", HttpOnly: false}
+		http.SetCookie(w, c)
+		w.WriteHeader(200)
+		w.Write([]byte(`<html><head><meta property="generator" content="TiddlyWiki" /></head><script scr="jquery.js"/><body><div></div></body></html>`))
+	})
+	ts := httptest.NewServer(mux)
 	defer ts.Close()
-	res, err = scraperTest.Scrape(ts.URL)
+	res, err := scraperTest.Scrape(ts.URL)
 	if assert.NoError(t, err, "Scrap should work") {
 		assert.NotEmpty(t, res.HTML, "There should be some HTML content")
 	}
@@ -39,21 +51,10 @@ func TestRodScraper(t *testing.T) {
 	err := scraperTest.Init()
 	assert.NoError(t, err, "Scraper Init error")
 
-	res, err := scraperTest.Scrape("https://tengrinews.kz")
-	assert.NoError(t, err, "Colly scraping error")
-	assert.NotEmpty(t, res.HTML, "There should be some HTML content")
-
-	resJS, err := scraperTest.EvalJS(`"test"`)
-	assert.Equal(t, "test", *resJS, "Test string should eval as test string...")
-	assert.NoError(t, err, "Rod should render JS")
-	resJS, err = scraperTest.EvalJS("this.should.throw.error")
-	assert.Nil(t, resJS, "Should return nil")
-	assert.Error(t, err, "Rod should throw error on rendering bad JS")
-
 	ts := MockHTTP("<html><script>var now = Date.now();var end = now + 2000;while (now < end) { now = Date.now(); }</script></html>")
 	defer ts.Close()
-	scraperTest.LoadingTimeoutSeconds = 1
 	err = scraperTest.Init()
+	scraperTest.LoadingTimeoutSeconds = 0
 	assert.NoError(t, err, "GoWap Init error")
 	_, err = scraperTest.Scrape(ts.URL)
 	assert.Error(t, err, "Timeout should throw error")
@@ -73,7 +74,7 @@ func TestRodScraper(t *testing.T) {
 
 	ts = MockHTTP(`<html><head><meta property="generator" content="TiddlyWiki" /></head><body><div></div></body></html>`)
 	defer ts.Close()
-	res, err = scraperTest.Scrape(ts.URL)
+	res, err := scraperTest.Scrape(ts.URL)
 	if assert.NoError(t, err, "Scrap should work") {
 		assert.Equal(t, "TiddlyWiki", res.Meta["generator"][0], "Scrap meta should work")
 	}
@@ -81,6 +82,26 @@ func TestRodScraper(t *testing.T) {
 	_, err = scraperTest.Scrape(ts.URL + "/doesnotexists")
 	assert.Error(t, err, "Timeout should throw error")
 	scraperTest.TimeoutSeconds = 2
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		c := &http.Cookie{Name: "test", Value: "testv", HttpOnly: false}
+		http.SetCookie(w, c)
+		w.WriteHeader(200)
+		w.Write([]byte(`<html><head><meta property="generator" content="TiddlyWiki" /></head><script scr="jquery.js"/><body><div></div></body></html>`))
+	})
+	ts = httptest.NewServer(mux)
+	defer ts.Close()
+
+	res, err = scraperTest.Scrape(ts.URL)
+	assert.NoError(t, err, "Colly scraping error")
+	assert.NotEmpty(t, res.HTML, "There should be some HTML content")
+	resJS, err := scraperTest.EvalJS(`"test"`)
+	assert.Equal(t, "test", *resJS, "Test string should eval as test string...")
+	assert.NoError(t, err, "Rod should render JS")
+	resJS, err = scraperTest.EvalJS("this.should.throw.error")
+	assert.Nil(t, resJS, "Should return nil")
+	assert.Error(t, err, "Rod should throw error on rendering bad JS")
 }
 
 func TestRobot(t *testing.T) {

@@ -6,45 +6,20 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGowap(t *testing.T) {
-	url := "https://tengrinews.kz"
-	config := NewConfig()
-	config.JSON = false
-	wapp, err := Init(config)
-	if assert.NoError(t, err, "GoWap Init error") {
-		res, err := wapp.Analyze(url)
-		if assert.NoError(t, err, "GoWap Analyze error") {
-			prettyJSON, err := json.MarshalIndent(res, "", "  ")
-			if assert.NoError(t, err, "Unmarshal error") {
-				log.Infof("[*] Result for %s:\n%s", url, string(prettyJSON))
-			}
-		}
-	}
-}
-
 func TestBadUrl(t *testing.T) {
-	url := "https://doesnotexist"
+	url := "https://badurlformat"
 	wapp, err := Init(NewConfig())
 	if assert.NoError(t, err, "GoWap Init error") {
 		_, err = wapp.Analyze(url)
-		assert.Error(t, err, "Bad URL should throw error")
+		assert.Error(t, err, "Bad formatted URL should throw error")
 	}
-}
 
-func TestLoadingTimeout(t *testing.T) {
-	ts := MockHTTP("<html><script>var now = Date.now();var end = now + 2000;while (now < end) { now = Date.now(); }</script></html>")
-	defer ts.Close()
-	config := NewConfig()
-	config.LoadingTimeoutSeconds = 1
-	wapp, err := Init(config)
-	if assert.NoError(t, err, "GoWap Init error") {
-		_, err = wapp.Analyze(ts.URL)
-		assert.Error(t, err, "Timeout should throw error")
-	}
+	url = "https://thiswebsitedoesnot.exists"
+	_, err = wapp.Analyze(url)
+	assert.Error(t, err, "Bad URL should throw error")
 }
 
 func TestColly(t *testing.T) {
@@ -210,6 +185,8 @@ func TestMeta(t *testing.T) {
 func TestUrl(t *testing.T) {
 	config := NewConfig()
 	wapp, err := Init(config)
+	wapp.Config.TimeoutSeconds = 5
+	wapp.Config.LoadingTimeoutSeconds = 5
 	if assert.NoError(t, err, "GoWap Init error") {
 		res, err := wapp.Analyze("https://twitter.github.io/")
 		if assert.NoError(t, err, "GoWap Analyze error") {
@@ -248,6 +225,18 @@ func TestHTML(t *testing.T) {
 				assert.True(t, found, "RoundCube should be find in HTML")
 			}
 		}
+	}
+	//Testing raw output
+	wapp.Config.JSON = false
+	res, err := wapp.Analyze(ts.URL)
+	if assert.NoError(t, err, "GoWap Analyze error") {
+		var found bool
+		for _, v := range res.(*output).Technologies {
+			if v.Name == "RoundCube" {
+				found = true
+			}
+		}
+		assert.True(t, found, "RoundCube should be find in HTML")
 	}
 }
 
