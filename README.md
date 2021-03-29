@@ -11,14 +11,14 @@
 * A [pull request](https://github.com/unstppbl/gowap/pull/2) is open with the original project
 
 * This implementation adds the following to the original GoWap project :
-- JS analysing (using [Rod](https://github.com/go-rod/rod))
-- DNS scraping
-- Confidence rate
-- Recursive crawling
-- [Rod](https://github.com/go-rod/rod) browser integration ([Colly](https://github.com/gocolly/colly) can still be used)
-- pkg organization ; add a cmd 
-- Test coverage 100%
-- robots.txt compliance
+  - JS analysing (using [Rod](https://github.com/go-rod/rod))
+  - DNS scraping
+  - Confidence rate
+  - Recursive crawling
+  - [Rod](https://github.com/go-rod/rod) browser integration ([Colly](https://github.com/gocolly/colly) can still be used)
+  - pkg organization ; add a cmd 
+  - Test coverage 100%
+  - robots.txt compliance
 
 ## Usage
 ### Using the package

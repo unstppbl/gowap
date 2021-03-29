@@ -585,7 +585,7 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 					parsed[k] = append(parsed[k], v1.(string))
 				}
 			default:
-				log.Errorf("Unkown type in parsePatterns: %T\n", v)
+				log.Errorf("Unknown type in parsePatterns: %T\n", v)
 			}
 		}
 	case []interface{}:
@@ -595,7 +595,7 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 		}
 		parsed["main"] = slice
 	default:
-		log.Errorf("Unkown type in parsePatterns: %T\n", ptrn)
+		log.Errorf("Unknown type in parsePatterns: %T\n", ptrn)
 	}
 	result = make(map[string][]*pattern)
 	for k, v := range parsed {
