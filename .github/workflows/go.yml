@@ -7,6 +7,19 @@ on:
     branches: [ master ]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.16.x
+    - name: Checkout code
+      uses: actions/checkout@v2
+    - name: Run linters
+      uses: golangci/golangci-lint-action@v2
+      with:
+        version: v1.29
 
   build:
     runs-on: ubuntu-latest
@@ -16,20 +29,13 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v2
       with:
-        go-version: 1.16
-
-    - name: Install dependencies
-      run: |
-        go version
-        go get -u golang.org/x/lint/golint
+        go-version: 1.16.x
 
     - name: Build
       run: go build -v ./...
 
-    - name: Run vet & lint
-      run: |
-        go vet ./...
-        golint ./...
+    - name: Run vet
+      run: go vet ./...
 
     - name: Test
       run: go test -v ./...
