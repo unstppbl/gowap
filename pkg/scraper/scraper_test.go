@@ -33,6 +33,7 @@ func TestCollyScraper(t *testing.T) {
 		c := &http.Cookie{Name: "test", Value: "testv", HttpOnly: false}
 		http.SetCookie(w, c)
 		w.WriteHeader(200)
+		//nolint:errcheck
 		w.Write([]byte(`<html><head><meta property="generator" content="TiddlyWiki" /></head><script scr="jquery.js"/><body><div></div></body></html>`))
 	})
 	ts := httptest.NewServer(mux)
@@ -88,6 +89,7 @@ func TestRodScraper(t *testing.T) {
 		c := &http.Cookie{Name: "test", Value: "testv", HttpOnly: false}
 		http.SetCookie(w, c)
 		w.WriteHeader(200)
+		//nolint:errcheck
 		w.Write([]byte(`<html><head><meta property="generator" content="TiddlyWiki" /></head><script scr="jquery.js"/><body><div></div></body></html>`))
 	})
 	ts = httptest.NewServer(mux)
@@ -116,16 +118,19 @@ func TestRobot(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
+		//nolint:errcheck
 		w.Write([]byte(robotsFile))
 	})
 
 	mux.HandleFunc("/allowed", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
+		//nolint:errcheck
 		w.Write([]byte("allowed"))
 	})
 
 	mux.HandleFunc("/disallowed", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
+		//nolint:errcheck
 		w.Write([]byte("disallowed"))
 	})
 	ts := httptest.NewServer(mux)
@@ -159,6 +164,7 @@ func TestRobot(t *testing.T) {
 	mux2 := http.NewServeMux()
 	mux2.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
+		//nolint:errcheck
 		w.Write([]byte(robotsFile))
 	})
 
