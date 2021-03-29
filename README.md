@@ -1,6 +1,8 @@
 # Gowap [[Wappalyzer](https://github.com/AliasIO/Wappalyzer) implementation in Go]
 
 [![Build Status](https://github.com/dranih/gowap/workflows/Build%20and%20test/badge.svg)](https://github.com/dranih/gowap/actions?workflow=Build%20and%20test)
+[![coverage](https://codecov.io/gh/dranih/gowap/branch/master/graph/badge.svg)](https://codecov.io/gh/dranih/gowap)
+[![report card](https://goreportcard.com/badge/github.com/dranih/gowap)](https://goreportcard.com/report/github.com/dranih/gowap)
 
 ## Notes
 
