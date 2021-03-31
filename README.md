@@ -90,4 +90,4 @@ List of some ideas  :
 - [ ] ability to choose what is scraped (DNS, cookies, HTML, scripts, etc...)
 - [ ] more tests in "real life"
 - [ ] perf ? regex html seems long
-- [ ] should output be the same as original wappalizer ? + ordering
+- [X] should output be the same as original wappalizer ? + ordering

@@ -63,9 +63,13 @@ type temp struct {
 }
 
 type application struct {
-	Name       string   `json:"name,omitempty"`
-	Version    string   `json:"version"`
-	Categories []string `json:"categories,omitempty"`
+	Slug       string
+	Name       string             `json:"name,omitempty"`
+	Version    string             `json:"version"`
+	Categories []extendedCategory `json:"categories,omitempty"`
+	Icon       string             `json:"icon,omitempty"`
+	Website    string             `json:"website,omitempty"`
+	CPE        string             `json:"cpe,omitempty"`
 
 	Cats     []int                             `json:"cats,omitempty"`
 	Cookies  interface{}                       `json:"cookies,omitempty"`
@@ -79,7 +83,6 @@ type application struct {
 	Scripts  interface{}                       `json:"scripts,omitempty"`
 	DNS      interface{}                       `json:"dns,omitempty"`
 	URL      string                            `json:"url,omitempty"`
-	Website  string                            `json:"website,omitempty"`
 }
 
 type category struct {
@@ -87,11 +90,18 @@ type category struct {
 	Priority int    `json:"priority,omitempty"`
 }
 
+type extendedCategory struct {
+	ID       int    `json:"id"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Priority int    `json:"-"`
+}
+
 // Wappalyzer implements analyze method as original wappalyzer does
 type Wappalyzer struct {
 	Scraper    scraper.Scraper
 	Apps       map[string]*application
-	Categories map[string]*category
+	Categories map[string]*extendedCategory
 	Config     *Config
 }
 
@@ -155,14 +165,21 @@ func parseTechnologiesFile(appsFile *[]byte, wapp *Wappalyzer) error {
 		return err
 	}
 	wapp.Apps = make(map[string]*application)
-	wapp.Categories = make(map[string]*category)
+	wapp.Categories = make(map[string]*extendedCategory)
 	for k, v := range temporary.Categories {
 		catg := &category{}
 		if err = json.Unmarshal(*v, catg); err != nil {
 			log.Errorf("[!] Couldn't unmarshal Categories: %s\n", err)
 			return err
 		}
-		wapp.Categories[k] = catg
+		catID, err := strconv.Atoi(k)
+		if err == nil {
+			slug, err := slugify(catg.Name)
+			if err == nil {
+				extCatg := &extendedCategory{catID, slug, catg.Name, catg.Priority}
+				wapp.Categories[k] = extCatg
+			}
+		}
 	}
 	if len(wapp.Categories) < 1 {
 		log.Errorf("Couldn't find categories in technologies file")
@@ -176,6 +193,7 @@ func parseTechnologiesFile(appsFile *[]byte, wapp *Wappalyzer) error {
 			return err
 		}
 		parseCategories(app, &wapp.Categories)
+		app.Slug, err = slugify(app.Name)
 		wapp.Apps[k] = app
 	}
 	if len(wapp.Apps) < 1 {
@@ -192,10 +210,14 @@ type resultApp struct {
 }
 
 type technology struct {
-	Name       string   `json:"name,omitempty"`
-	Version    string   `json:"version"`
-	Categories []string `json:"categories,omitempty"`
-	Confidence int      `json:"confidence"`
+	Slug       string             `json:"slug"`
+	Name       string             `json:"name"`
+	Confidence int                `json:"confidence"`
+	Version    string             `json:"version"`
+	Icon       string             `json:"icon"`
+	Website    string             `json:"website"`
+	CPE        string             `json:"cpe"`
+	Categories []extendedCategory `json:"categories"`
 }
 
 type detected struct {
@@ -513,7 +535,7 @@ func analyzeDNS(app *application, dns map[string][]string, detectedApplications 
 func addApp(app *application, detectedApplications *detected, version string, confidence int) {
 	detectedApplications.Mu.Lock()
 	if _, ok := (*detectedApplications).Apps[app.Name]; !ok {
-		resApp := &resultApp{technology{app.Name, version, app.Categories, confidence}, app.Excludes, app.Implies}
+		resApp := &resultApp{technology{app.Slug, app.Name, confidence, version, app.Icon, app.Website, app.CPE, app.Categories}, app.Excludes, app.Implies}
 		(*detectedApplications).Apps[resApp.technology.Name] = resApp
 	} else {
 		if (*detectedApplications).Apps[app.Name].technology.Version == "" {
@@ -646,7 +668,7 @@ func resolveImplies(apps *map[string]*application, detected *map[string]*resultA
 		for _, implied := range v {
 			app, ok := (*apps)[implied.str]
 			if _, ok2 := (*detected)[implied.str]; ok && !ok2 {
-				resApp := &resultApp{technology{app.Name, implied.version, app.Categories, implied.confidence}, app.Excludes, app.Implies}
+				resApp := &resultApp{technology{app.Slug, app.Name, implied.confidence, implied.version, app.Icon, app.Website, app.CPE, app.Categories}, app.Excludes, app.Implies}
 				(*detected)[implied.str] = resApp
 				if app.Implies != nil {
 					resolveImplies(apps, detected, app.Implies)
@@ -656,9 +678,9 @@ func resolveImplies(apps *map[string]*application, detected *map[string]*resultA
 	}
 }
 
-func parseCategories(app *application, categoriesCatalog *map[string]*category) {
+func parseCategories(app *application, categoriesCatalog *map[string]*extendedCategory) {
 	for _, categoryID := range app.Cats {
-		app.Categories = append(app.Categories, (*categoriesCatalog)[strconv.Itoa(categoryID)].Name)
+		app.Categories = append(app.Categories, *(*categoriesCatalog)[strconv.Itoa(categoryID)])
 	}
 }
 
@@ -688,4 +710,20 @@ func getLinksSlice(doc *goquery.Document, currentURL string) *map[string]struct{
 		}
 	})
 	return &ret
+}
+
+// slugify returns the slug string from an input string
+func slugify(str string) (ret string, err error) {
+	ret = strings.ToLower(str)
+	reg, err := regexp.Compile(`[^a-z0-9-]`)
+	if err == nil {
+		ret = reg.ReplaceAllString(ret, "-")
+		reg, err = regexp.Compile(`--+`)
+		if err == nil {
+			ret = reg.ReplaceAllString(ret, "-")
+			reg, err = regexp.Compile(`(?:^-|-$)`)
+			ret = reg.ReplaceAllString(ret, "")
+		}
+	}
+	return ret, err
 }
