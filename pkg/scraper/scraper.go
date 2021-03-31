@@ -7,8 +7,8 @@ import (
 )
 
 type ScrapedURL struct {
-	URL    string
-	Status int
+	URL    string `json:"url,omitempty"`
+	Status int    `json:"status,omitempty"`
 }
 
 type ScrapedData struct {
