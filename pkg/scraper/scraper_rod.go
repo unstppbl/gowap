@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"net/url"
@@ -149,7 +150,11 @@ func (s *RodScraper) checkRobots(u *url.URL) error {
 	s.lock.RUnlock()
 	if !ok {
 		// no robots file cached
-		resp, err := http.Get(u.Scheme + "://" + u.Host + "/robots.txt")
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		client := &http.Client{Transport: tr}
+		resp, err := client.Get(u.Scheme + "://" + u.Host + "/robots.txt")
 		if err != nil {
 			return err
 		}
