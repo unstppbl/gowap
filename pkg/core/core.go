@@ -240,6 +240,7 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 	toVisitURLs[paramURL] = struct{}{}
 	for depth := 0; depth <= wapp.Config.MaxDepth; depth++ {
 		log.Printf("Depth : %d", depth)
+		wapp.Scraper.SetDepth(depth)
 		links, visitedURLs, retErr := analyzePages(toVisitURLs, wapp, detectedApplications)
 		//If we have at least one page ok => no error
 		if err != nil && retErr == nil {

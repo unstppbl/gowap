@@ -27,6 +27,7 @@ type Scraper interface {
 	CanRenderPage() bool
 	Scrape(paramURL string) (*ScrapedData, error)
 	EvalJS(jsProp string) (*string, error)
+	SetDepth(depth int)
 }
 
 func scrapeDNS(paramURL string) map[string][]string {
