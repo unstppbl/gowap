@@ -14,16 +14,21 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (s *CollyScraper) CanRenderPage() bool {
-	return false
-}
-
 type CollyScraper struct {
 	Collector             *colly.Collector
 	Transport             *http.Transport
 	TimeoutSeconds        int
 	LoadingTimeoutSeconds int
 	UserAgent             string
+	depth                 int
+}
+
+func (s *CollyScraper) CanRenderPage() bool {
+	return false
+}
+
+func (s *CollyScraper) SetDepth(depth int) {
+	s.depth = depth
 }
 
 func (s *CollyScraper) Init() error {
@@ -40,12 +45,10 @@ func (s *CollyScraper) Init() error {
 	}
 
 	s.Collector = colly.NewCollector()
-	s.Collector.IgnoreRobotsTxt = false
 	s.Collector.UserAgent = s.UserAgent
 	s.Collector.WithTransport(s.Transport)
 
 	extensions.Referer(s.Collector)
-	//extensions.RandomUserAgent(s.Collector)
 
 	return nil
 }
@@ -54,6 +57,10 @@ func (s *CollyScraper) Scrape(paramURL string) (*ScrapedData, error) {
 
 	scraped := &ScrapedData{}
 	scraped.DNS = scrapeDNS(paramURL)
+
+	if s.depth > 0 {
+		s.Collector.IgnoreRobotsTxt = false
+	}
 
 	s.Collector.OnResponse(func(r *colly.Response) {
 		// log.Infof("Visited %s", r.Request.URL)

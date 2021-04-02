@@ -25,10 +25,15 @@ type RodScraper struct {
 	protoUserAgent        *proto.NetworkSetUserAgentOverride
 	lock                  *sync.RWMutex
 	robotsMap             map[string]*robotstxt.RobotsData
+	depth                 int
 }
 
 func (s *RodScraper) CanRenderPage() bool {
 	return true
+}
+
+func (s *RodScraper) SetDepth(depth int) {
+	s.depth = depth
 }
 
 func (s *RodScraper) Init() error {
@@ -52,8 +57,10 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 	if err != nil {
 		return scraped, err
 	}
-	if err := s.checkRobots(parsedURL); err != nil {
-		return scraped, err
+	if s.depth > 0 {
+		if err := s.checkRobots(parsedURL); err != nil {
+			return scraped, err
+		}
 	}
 
 	var e proto.NetworkResponseReceived

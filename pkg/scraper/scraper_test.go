@@ -138,6 +138,7 @@ func TestRobot(t *testing.T) {
 
 	collyScraperTest := &CollyScraper{UserAgent: "GoWap"}
 	err := collyScraperTest.Init()
+	collyScraperTest.SetDepth(1)
 	if assert.NoError(t, err, "Scraper Init error") {
 		_, err := collyScraperTest.Scrape(ts.URL + "/allowed")
 		assert.NoError(t, err, "Robot should allowed this url")
@@ -147,6 +148,7 @@ func TestRobot(t *testing.T) {
 
 	rodScraperTest := &RodScraper{TimeoutSeconds: 2, LoadingTimeoutSeconds: 2, UserAgent: "GoWap"}
 	err = rodScraperTest.Init()
+	rodScraperTest.SetDepth(1)
 	if assert.NoError(t, err, "Scraper Init error") {
 		_, err := rodScraperTest.Scrape(ts.URL + "/allowed")
 		assert.NoError(t, err, "Robot should allowed this url")
@@ -173,6 +175,9 @@ func TestRobot(t *testing.T) {
 
 	_, err = rodScraperTest.Scrape(ts2.URL)
 	assert.Error(t, err, "Bad robot format should throw an error")
+
+	_, err = rodScraperTest.Scrape("https://doesnotexist")
+	assert.Error(t, err, "Navigation should fail")
 
 }
 

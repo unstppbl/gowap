@@ -86,6 +86,10 @@ Usage : gowap [options] <url>
 
 ## To Do
 List of some ideas  :
+- [ ] analyse robots (field certIssuer)
+- [ ] analyse certificates (field certIssuer)
+- [ ] anayse css (field css)
+- [ ] anayse xhr requests (field xhr)
 - [ ] scrape an url list from a file in args
 - [ ] ability to choose what is scraped (DNS, cookies, HTML, scripts, etc...)
 - [ ] more tests in "real life"
