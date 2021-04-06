@@ -1,4 +1,4 @@
-module github.com/dranih/gowap
+module github.com/unstppbl/gowap
 
 go 1.16
 
