@@ -19,10 +19,11 @@ import (
 )
 
 type collyData struct {
-	html    string
-	headers map[string][]string
-	scripts []string
-	cookies map[string]string
+	html       string
+	headers    map[string][]string
+	scripts    []string
+	cookies    map[string]string
+	certIssuer []string
 }
 
 type temp struct {
@@ -34,22 +35,38 @@ type application struct {
 	Version    string   `json:"version"`
 	Categories []string `json:"categories,omitempty"`
 
-	Cats     []int                  `json:"cats,omitempty"`
-	Cookies  interface{}            `json:"cookies,omitempty"`
-	Js       interface{}            `json:"js,omitempty"`
-	Headers  interface{}            `json:"headers,omitempty"`
-	HTML     interface{}            `json:"html,omitempty"`
-	Excludes interface{}            `json:"excludes,omitempty"`
-	Implies  interface{}            `json:"implies,omitempty"`
-	Meta     map[string]interface{} `json:"meta,omitempty"`
-	Scripts  interface{}            `json:"script,omitempty"`
-	URL      string                 `json:"url,omitempty"`
-	Website  string                 `json:"website,omitempty"`
+	Cats       []int                  `json:"cats,omitempty"`
+	Cookies    interface{}            `json:"cookies,omitempty"`
+	Js         interface{}            `json:"js,omitempty"`
+	Headers    interface{}            `json:"headers,omitempty"`
+	HTML       interface{}            `json:"html,omitempty"`
+	Excludes   interface{}            `json:"excludes,omitempty"`
+	Implies    interface{}            `json:"implies,omitempty"`
+	Meta       map[string]interface{} `json:"meta,omitempty"`
+	Scripts    interface{}            `json:"scripts,omitempty"`
+	URL        string                 `json:"url,omitempty"`
+	Website    string                 `json:"website,omitempty"`
+	CertIssuer string                 `json:"certIssuer,omitempty"`
 }
 
 type category struct {
 	Name     string `json:"name,omitempty"`
 	Priority int    `json:"priority,omitempty"`
+}
+
+type GoWapTransport struct {
+	*http.Transport
+	respCallBack func(resp *http.Response)
+}
+
+func NewGoWapTransport(t *http.Transport, f func(resp *http.Response)) *GoWapTransport {
+	return &GoWapTransport{Transport: t, respCallBack: f}
+}
+
+func (gt *GoWapTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rsp, err := gt.Transport.RoundTrip(req)
+	gt.respCallBack(rsp)
+	return rsp, err
 }
 
 // Wappalyzer implements analyze method as original wappalyzer does
@@ -122,14 +139,29 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 	wapp.Collector = colly.NewCollector(
 		colly.IgnoreRobotsTxt(),
 	)
-	wapp.Collector.WithTransport(wapp.Transport)
 
+	scraped := &collyData{}
+	setResp := func(r *http.Response) {
+		if r == nil {
+			return
+		}
+		if r.TLS == nil {
+			return
+		}
+		if len(r.TLS.PeerCertificates) > 0 {
+			if len(r.TLS.PeerCertificates[0].Issuer.Organization) > 0 {
+				scraped.certIssuer = append(scraped.certIssuer, r.TLS.PeerCertificates[0].Issuer.Organization...)
+			} else {
+				scraped.certIssuer = append(scraped.certIssuer, r.TLS.PeerCertificates[0].Issuer.CommonName)
+			}
+		}
+	}
+
+	wapp.Collector.WithTransport(NewGoWapTransport(wapp.Transport, setResp))
 	extensions.Referer(wapp.Collector)
 	extensions.RandomUserAgent(wapp.Collector)
 
 	detectedApplications := make(map[string]*resultApp)
-	scraped := &collyData{}
-
 	wapp.Collector.OnResponse(func(r *colly.Response) {
 		// log.Infof("Visited %s", r.Request.URL)
 		scraped.headers = make(map[string][]string)
@@ -176,6 +208,9 @@ func (wapp *Wappalyzer) Analyze(url string) (result interface{}, err error) {
 		if app.Scripts != nil {
 			analyzeScripts(app, scraped.scripts, &detectedApplications)
 		}
+		if app.CertIssuer != "" {
+			analyzeCertIssuer(app, scraped.certIssuer, &detectedApplications)
+		}
 	}
 	for _, app := range detectedApplications {
 		if app.excludes != nil {
@@ -210,6 +245,17 @@ func analyzeURL(app *application, url string, detectedApplications *map[string]*
 					(*detectedApplications)[resApp.Name] = resApp
 					detectVersion(resApp, pattrn, &url)
 				}
+			}
+		}
+	}
+}
+
+func analyzeCertIssuer(app *application, certIssuer []string, detectedApplications *map[string]*resultApp) {
+	for _, issuerString := range certIssuer {
+		if strings.Contains(issuerString, app.CertIssuer) {
+			if _, ok := (*detectedApplications)[app.Name]; !ok {
+				resApp := &resultApp{app.Name, app.Version, app.Categories, app.Excludes, app.Implies}
+				(*detectedApplications)[resApp.Name] = resApp
 			}
 		}
 	}
