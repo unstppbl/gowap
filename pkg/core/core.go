@@ -71,18 +71,19 @@ type application struct {
 	Website    string             `json:"website,omitempty"`
 	CPE        string             `json:"cpe,omitempty"`
 
-	Cats     []int                             `json:"cats,omitempty"`
-	Cookies  interface{}                       `json:"cookies,omitempty"`
-	Dom      map[string]map[string]interface{} `json:"dom,omitempty"`
-	Js       interface{}                       `json:"js,omitempty"`
-	Headers  interface{}                       `json:"headers,omitempty"`
-	HTML     interface{}                       `json:"html,omitempty"`
-	Excludes interface{}                       `json:"excludes,omitempty"`
-	Implies  interface{}                       `json:"implies,omitempty"`
-	Meta     interface{}                       `json:"meta,omitempty"`
-	Scripts  interface{}                       `json:"scripts,omitempty"`
-	DNS      interface{}                       `json:"dns,omitempty"`
-	URL      string                            `json:"url,omitempty"`
+	Cats    []int       `json:"cats,omitempty"`
+	Cookies interface{} `json:"cookies,omitempty"`
+	//Dom      map[string]map[string]interface{} `json:"dom,omitempty"`
+	Dom      interface{} `json:"dom,omitempty"`
+	Js       interface{} `json:"js,omitempty"`
+	Headers  interface{} `json:"headers,omitempty"`
+	HTML     interface{} `json:"html,omitempty"`
+	Excludes interface{} `json:"excludes,omitempty"`
+	Implies  interface{} `json:"implies,omitempty"`
+	Meta     interface{} `json:"meta,omitempty"`
+	Scripts  interface{} `json:"scripts,omitempty"`
+	DNS      interface{} `json:"dns,omitempty"`
+	URL      string      `json:"url,omitempty"`
 }
 
 type category struct {
@@ -393,11 +394,15 @@ func analyzeScripts(app *application, scripts []string, detectedApplications *de
 	patterns := parsePatterns(app.Scripts)
 	for _, v := range patterns {
 		for _, pattrn := range v {
+			if app.Name == "jQuery" {
+				log.Infof("Regex : %s", pattrn.str)
+			}
 			if pattrn.regex != nil {
 				for _, script := range scripts {
 					if pattrn.regex.MatchString(script) {
 						version := detectVersion(pattrn, &script)
 						addApp(app, detectedApplications, version, pattrn.confidence)
+						log.Infof("Detect Jquery version %s", version)
 					}
 				}
 			}
@@ -485,7 +490,26 @@ func analyzeJS(app *application, scraper scraper.Scraper, detectedApplications *
 
 // analyzeDom evals the DOM tries to match
 func analyzeDom(app *application, doc *goquery.Document, detectedApplications *detected) {
-	for domSelector, v1 := range app.Dom {
+	//Parsing Dom selector from json (string or map)
+	//map[string]map[string]interface{}
+	domParsed := make(map[string]map[string]interface{})
+	switch doms := app.Dom.(type) {
+	case string:
+		domParsed[doms] = map[string]interface{}{"exists": ""}
+	case map[string]interface{}:
+		//domParsed = doms.(map[string]interface{})
+		for domSelector, v1 := range doms {
+			domParsed[domSelector] = v1.(map[string]interface{})
+		}
+	case []interface{}:
+		for _, domSelector := range doms {
+			domParsed[domSelector.(string)] = map[string]interface{}{"exists": ""}
+		}
+	default:
+		log.Errorf("Unknown type in analyzeDom: %T\n", doms)
+	}
+
+	for domSelector, v1 := range domParsed {
 		doc.Find(domSelector).First().Each(func(i int, s *goquery.Selection) {
 			for domType, v := range v1 {
 				patterns := parsePatterns(v)
@@ -494,7 +518,7 @@ func analyzeDom(app *application, doc *goquery.Document, detectedApplications *d
 						var value string
 						var exists bool
 						switch domType {
-						case "text":
+						case "text", "exists":
 							value = s.Text()
 							exists = true
 						case "properties":

@@ -15,8 +15,8 @@
   - DNS scraping
   - Confidence rate
   - Recursive crawling
-  - [Rod](https://github.com/go-rod/rod) browser integration ([Colly](https://github.com/gocolly/colly) can still be used)
-  - pkg organization ; add a cmd 
+  - [Rod](https://github.com/go-rod/rod) browser integration ([Colly](https://github.com/gocolly/colly) can still be used - faster but not loading JS)
+  - Can be used with as a cmd (technologies.json file embeded)
   - Test coverage 100%
   - robots.txt compliance
 
