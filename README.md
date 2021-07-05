@@ -1,25 +1,28 @@
 # Gowap [[Wappalyzer](https://github.com/AliasIO/Wappalyzer) implementation in Go]
 
-[![Build Status](https://github.com/unstppbl/gowap/workflows/Build%20and%20test/badge.svg)](https://github.com/unstppbl/gowap/actions?workflow=Build%20and%20test)
-[![report card](https://goreportcard.com/badge/github.com/unstppbl/gowap)](https://goreportcard.com/report/github.com/unstppbl/gowap)
+[![Build Status](https://github.com/dranih/gowap/workflows/Build%20and%20test/badge.svg)](https://github.com/dranih/gowap/actions?workflow=Build%20and%20test)
+[![coverage](https://codecov.io/gh/dranih/gowap/branch/master/graph/badge.svg)](https://codecov.io/gh/dranih/gowap)
+[![report card](https://goreportcard.com/badge/github.com/dranih/gowap)](https://goreportcard.com/report/github.com/dranih/gowap)
 
 ## Notes
 
-* Most of the original [Wappalyzer](https://github.com/AliasIO/Wappalyzer) project functions are implemented :
-  - HTML, DOM, meta tags, headers, cookies, scripts and DNS are analysed
+* This is a fork of [unstppbl/gowap](https://github.com/unstppbl/gowap). The main goal here is for me to improve my skills in Go. **Therefore, this is not production ready nor bug free**. Any comment or contribution are welcome.
+
+* A [pull request](https://github.com/unstppbl/gowap/pull/2) is open with the original project
+
+* This implementation adds the following to the original GoWap project :
   - JS analysing (using [Rod](https://github.com/go-rod/rod))
+  - DNS scraping
   - Confidence rate
   - Recursive crawling
-  - [Rod](https://github.com/go-rod/rod) browser integration ([Colly](https://github.com/gocolly/colly) can still be used - faster but not loading JS)
-  - Can be used with as a cmd (technologies.json file embeded)
+  - [Rod](https://github.com/go-rod/rod) browser integration ([Colly](https://github.com/gocolly/colly) can still be used)
+  - pkg organization ; add a cmd 
   - Test coverage 100%
   - robots.txt compliance
 
-* If you want to participate in development, fork it, make your advancements and create merge request, everyone is welcome!
-
 ## Usage
 ### Using the package
-`go get github.com/unstppbl/gowap`
+`go get github.com/dranih/gowap`
 
 Call `Init()` function with a `Config` object created with the `NewConfig()` function. It will return `Wappalyzer` object on which you can call Analyze method with URL string as argument.
 
@@ -83,7 +86,7 @@ Usage : gowap [options] <url>
 
 ## To Do
 List of some ideas  :
-- [ ] analyse robots (field robots)
+- [ ] analyse robots (field certIssuer)
 - [ ] analyse certificates (field certIssuer)
 - [ ] anayse css (field css)
 - [ ] anayse xhr requests (field xhr)

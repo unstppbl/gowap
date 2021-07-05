@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	scraper "github.com/dranih/gowap/pkg/scraper"
 	log "github.com/sirupsen/logrus"
-	scraper "github.com/unstppbl/gowap/pkg/scraper"
 
 	jsoniter "github.com/json-iterator/go"
 	"go.zoe.im/surferua"

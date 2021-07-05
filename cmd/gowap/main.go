@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	gowap "github.com/unstppbl/gowap/pkg/core"
+	gowap "github.com/dranih/gowap/pkg/core"
 )
 
 func main() {
