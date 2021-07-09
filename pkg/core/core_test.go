@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -324,6 +325,15 @@ func TestParsePattern(t *testing.T) {
 	patterns2 := make(map[string]interface{})
 	patterns2["test"] = patterns
 	parsePatterns(patterns2)
+}
+
+func TestAnalyseDom(t *testing.T) {
+	app := &application{}
+	godoc := &goquery.Document{}
+	detectedApp := &detected{}
+	app.Dom = false
+	//Logging output should be tested here
+	analyzeDom(app, godoc, detectedApp)
 }
 
 func TestRecursivity(t *testing.T) {

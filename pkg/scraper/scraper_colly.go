@@ -107,16 +107,11 @@ func (s *CollyScraper) Scrape(paramURL string) (*ScrapedData, error) {
 			}
 		}
 
-		if s.Response == nil {
-			return
-		}
-		if s.Response.TLS == nil {
-			return
-		}
-		if len(s.Response.TLS.PeerCertificates) > 0 {
+		if s.Response != nil && s.Response.TLS != nil && len(s.Response.TLS.PeerCertificates) > 0 {
 			if len(s.Response.TLS.PeerCertificates[0].Issuer.Organization) > 0 {
 				scraped.CertIssuer = append(scraped.CertIssuer, s.Response.TLS.PeerCertificates[0].Issuer.Organization...)
-			} else {
+			}
+			if len(s.Response.TLS.PeerCertificates[0].Issuer.CommonName) > 0 {
 				scraped.CertIssuer = append(scraped.CertIssuer, s.Response.TLS.PeerCertificates[0].Issuer.CommonName)
 			}
 		}
