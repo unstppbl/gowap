@@ -193,13 +193,17 @@ func TestUrl(t *testing.T) {
 			var output output
 			err = json.UnmarshalFromString(res.(string), &output)
 			if assert.NoError(t, err, "Unmarshal error") {
-				var found bool
+				var found, foundCert bool
 				for _, v := range output.Technologies {
 					if v.Name == "GitHub Pages" {
 						found = true
 					}
+					if v.Name == "DigiCert" {
+						foundCert = true
+					}
 				}
 				assert.True(t, found, "GitHub Pages should be find in URL")
+				assert.True(t, foundCert, "Digicert should be found in certs")
 			}
 		}
 	}

@@ -12,13 +12,14 @@ type ScrapedURL struct {
 }
 
 type ScrapedData struct {
-	URLs    ScrapedURL
-	HTML    string
-	Headers map[string][]string
-	Scripts []string
-	Cookies map[string]string
-	Meta    map[string][]string
-	DNS     map[string][]string
+	URLs       ScrapedURL
+	HTML       string
+	Headers    map[string][]string
+	Scripts    []string
+	Cookies    map[string]string
+	Meta       map[string][]string
+	DNS        map[string][]string
+	CertIssuer []string
 }
 
 // Scraper is an interface for different scrapping brower (colly, rod)
