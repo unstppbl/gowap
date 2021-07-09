@@ -17,6 +17,7 @@ import (
 type CollyScraper struct {
 	Collector             *colly.Collector
 	Transport             *http.Transport
+	Response              *http.Response
 	TimeoutSeconds        int
 	LoadingTimeoutSeconds int
 	UserAgent             string
@@ -46,11 +47,32 @@ func (s *CollyScraper) Init() error {
 
 	s.Collector = colly.NewCollector()
 	s.Collector.UserAgent = s.UserAgent
-	s.Collector.WithTransport(s.Transport)
+	//s.Collector.WithTransport(s.Transport)
+
+	setResp := func(r *http.Response) {
+		s.Response = r
+	}
+
+	s.Collector.WithTransport(NewGoWapTransport(s.Transport, setResp))
 
 	extensions.Referer(s.Collector)
 
 	return nil
+}
+
+type GoWapTransport struct {
+	*http.Transport
+	respCallBack func(resp *http.Response)
+}
+
+func NewGoWapTransport(t *http.Transport, f func(resp *http.Response)) *GoWapTransport {
+	return &GoWapTransport{Transport: t, respCallBack: f}
+}
+
+func (gt *GoWapTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rsp, err := gt.Transport.RoundTrip(req)
+	gt.respCallBack(rsp)
+	return rsp, err
 }
 
 func (s *CollyScraper) Scrape(paramURL string) (*ScrapedData, error) {
@@ -82,6 +104,15 @@ func (s *CollyScraper) Scrape(paramURL string) (*ScrapedData, error) {
 					key, value := keyValueSlice[0], keyValueSlice[1]
 					scraped.Cookies[key] = value
 				}
+			}
+		}
+
+		if s.Response != nil && s.Response.TLS != nil && len(s.Response.TLS.PeerCertificates) > 0 {
+			if len(s.Response.TLS.PeerCertificates[0].Issuer.Organization) > 0 {
+				scraped.CertIssuer = append(scraped.CertIssuer, s.Response.TLS.PeerCertificates[0].Issuer.Organization...)
+			}
+			if len(s.Response.TLS.PeerCertificates[0].Issuer.CommonName) > 0 {
+				scraped.CertIssuer = append(scraped.CertIssuer, s.Response.TLS.PeerCertificates[0].Issuer.CommonName)
 			}
 		}
 	})

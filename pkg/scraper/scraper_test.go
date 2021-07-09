@@ -104,6 +104,14 @@ func TestRodScraper(t *testing.T) {
 	resJS, err = scraperTest.EvalJS("this.should.throw.error")
 	assert.Nil(t, resJS, "Should return nil")
 	assert.Error(t, err, "Rod should throw error on rendering bad JS")
+
+	url = "https://twitter.github.io/"
+	err = scraperTest.Init()
+	assert.NoError(t, err, "GoWap Init error")
+	res, err = scraperTest.Scrape(url)
+	if assert.NoError(t, err, "GoWap Analyze error") {
+		assert.Contains(t, res.CertIssuer[0], "DigiCert", "Scrap cert manager should work")
+	}
 }
 
 func TestRobot(t *testing.T) {

@@ -71,18 +71,19 @@ type application struct {
 	Website    string             `json:"website,omitempty"`
 	CPE        string             `json:"cpe,omitempty"`
 
-	Cats     []int                             `json:"cats,omitempty"`
-	Cookies  interface{}                       `json:"cookies,omitempty"`
-	Dom      map[string]map[string]interface{} `json:"dom,omitempty"`
-	Js       interface{}                       `json:"js,omitempty"`
-	Headers  interface{}                       `json:"headers,omitempty"`
-	HTML     interface{}                       `json:"html,omitempty"`
-	Excludes interface{}                       `json:"excludes,omitempty"`
-	Implies  interface{}                       `json:"implies,omitempty"`
-	Meta     interface{}                       `json:"meta,omitempty"`
-	Scripts  interface{}                       `json:"scripts,omitempty"`
-	DNS      interface{}                       `json:"dns,omitempty"`
-	URL      string                            `json:"url,omitempty"`
+	Cats       []int       `json:"cats,omitempty"`
+	Cookies    interface{} `json:"cookies,omitempty"`
+	Dom        interface{} `json:"dom,omitempty"`
+	Js         interface{} `json:"js,omitempty"`
+	Headers    interface{} `json:"headers,omitempty"`
+	HTML       interface{} `json:"html,omitempty"`
+	Excludes   interface{} `json:"excludes,omitempty"`
+	Implies    interface{} `json:"implies,omitempty"`
+	Meta       interface{} `json:"meta,omitempty"`
+	Scripts    interface{} `json:"scripts,omitempty"`
+	DNS        interface{} `json:"dns,omitempty"`
+	URL        string      `json:"url,omitempty"`
+	CertIssuer string      `json:"certIssuer,omitempty"`
 }
 
 type category struct {
@@ -361,6 +362,9 @@ func analyzePage(paramURL string, wapp *Wappalyzer, detectedApplications *detect
 			if len(scraped.DNS) > 0 && app.DNS != nil {
 				analyzeDNS(app, scraped.DNS, detectedApplications)
 			}
+			if len(scraped.CertIssuer) > 0 && app.CertIssuer != "" {
+				analyzeCertIssuer(app, scraped.CertIssuer, detectedApplications)
+			}
 		}(app)
 	}
 
@@ -485,7 +489,24 @@ func analyzeJS(app *application, scraper scraper.Scraper, detectedApplications *
 
 // analyzeDom evals the DOM tries to match
 func analyzeDom(app *application, doc *goquery.Document, detectedApplications *detected) {
-	for domSelector, v1 := range app.Dom {
+	//Parsing Dom selector from json (string or map)
+	domParsed := make(map[string]map[string]interface{})
+	switch doms := app.Dom.(type) {
+	case string:
+		domParsed[doms] = map[string]interface{}{"exists": ""}
+	case map[string]interface{}:
+		for domSelector, v1 := range doms {
+			domParsed[domSelector] = v1.(map[string]interface{})
+		}
+	case []interface{}:
+		for _, domSelector := range doms {
+			domParsed[domSelector.(string)] = map[string]interface{}{"exists": ""}
+		}
+	default:
+		log.Errorf("Unknown type in analyzeDom: %T\n", doms)
+	}
+
+	for domSelector, v1 := range domParsed {
 		doc.Find(domSelector).First().Each(func(i int, s *goquery.Selection) {
 			for domType, v := range v1 {
 				patterns := parsePatterns(v)
@@ -494,7 +515,7 @@ func analyzeDom(app *application, doc *goquery.Document, detectedApplications *d
 						var value string
 						var exists bool
 						switch domType {
-						case "text":
+						case "text", "exists":
 							value = s.Text()
 							exists = true
 						case "properties":
@@ -527,6 +548,15 @@ func analyzeDNS(app *application, dns map[string][]string, detectedApplications 
 					}
 				}
 			}
+		}
+	}
+}
+
+// analyzeCertIssuer tries to match cert issuer
+func analyzeCertIssuer(app *application, certIssuer []string, detectedApplications *detected) {
+	for _, issuerString := range certIssuer {
+		if strings.Contains(issuerString, app.CertIssuer) {
+			addApp(app, detectedApplications, "", 100)
 		}
 	}
 }

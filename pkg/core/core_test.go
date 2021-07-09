@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -193,13 +194,17 @@ func TestUrl(t *testing.T) {
 			var output output
 			err = json.UnmarshalFromString(res.(string), &output)
 			if assert.NoError(t, err, "Unmarshal error") {
-				var found bool
+				var found, foundCert bool
 				for _, v := range output.Technologies {
 					if v.Name == "GitHub Pages" {
 						found = true
 					}
+					if v.Name == "DigiCert" {
+						foundCert = true
+					}
 				}
 				assert.True(t, found, "GitHub Pages should be find in URL")
+				assert.True(t, foundCert, "Digicert should be found in certs")
 			}
 		}
 	}
@@ -320,6 +325,15 @@ func TestParsePattern(t *testing.T) {
 	patterns2 := make(map[string]interface{})
 	patterns2["test"] = patterns
 	parsePatterns(patterns2)
+}
+
+func TestAnalyseDom(t *testing.T) {
+	app := &application{}
+	godoc := &goquery.Document{}
+	detectedApp := &detected{}
+	app.Dom = false
+	//Logging output should be tested here
+	analyzeDom(app, godoc, detectedApp)
 }
 
 func TestRecursivity(t *testing.T) {
