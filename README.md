@@ -1,16 +1,9 @@
 # Gowap [[Wappalyzer](https://github.com/AliasIO/Wappalyzer) implementation in Go]
 
-[![Build Status](https://github.com/dranih/gowap/workflows/Build%20and%20test/badge.svg)](https://github.com/dranih/gowap/actions?workflow=Build%20and%20test)
-[![coverage](https://codecov.io/gh/dranih/gowap/branch/master/graph/badge.svg)](https://codecov.io/gh/dranih/gowap)
-[![report card](https://goreportcard.com/badge/github.com/dranih/gowap)](https://goreportcard.com/report/github.com/dranih/gowap)
+[![Build Status](https://github.com/unstppbl/gowap/workflows/Build%20and%20test/badge.svg)](https://github.com/dranih/gowap/actions?workflow=Build%20and%20test)
+[![coverage](https://codecov.io/gh/unstppbl/gowap/branch/master/graph/badge.svg)](https://codecov.io/gh/dranih/gowap)
+[![report card](https://goreportcard.com/badge/github.com/unstppbl/gowap)](https://goreportcard.com/report/github.com/dranih/gowap)
 
-## Notes
-
-* This is a fork of [unstppbl/gowap](https://github.com/unstppbl/gowap). The main goal here is for me to improve my skills in Go. **Therefore, this is not production ready nor bug free**. Any comment or contribution are welcome.
-
-* A [pull request](https://github.com/unstppbl/gowap/pull/2) is open with the original project
-
-* This implementation adds the following to the original GoWap project :
   - JS analysing (using [Rod](https://github.com/go-rod/rod))
   - DNS scraping
   - Confidence rate
@@ -22,7 +15,7 @@
 
 ## Usage
 ### Using the package
-`go get github.com/dranih/gowap`
+`go get github.com/unstppbl/gowap`
 
 Call `Init()` function with a `Config` object created with the `NewConfig()` function. It will return `Wappalyzer` object on which you can call Analyze method with URL string as argument.
 
