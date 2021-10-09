@@ -2,8 +2,10 @@ package launcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -50,6 +52,14 @@ func HostTaobao(revision int) string {
 	)
 }
 
+// DefaultBrowserDir for downloaded browser. For unix is "$HOME/.cache/rod/browser",
+// for Windows it's "%APPDATA%\rod\browser"
+var DefaultBrowserDir = filepath.Join(map[string]string{
+	"windows": filepath.Join(os.Getenv("APPDATA")),
+	"darwin":  filepath.Join(os.Getenv("HOME"), ".cache"),
+	"linux":   filepath.Join(os.Getenv("HOME"), ".cache"),
+}[runtime.GOOS], "rod", "browser")
+
 // Browser is a helper to download browser smartly
 type Browser struct {
 	Context context.Context
@@ -60,32 +70,25 @@ type Browser struct {
 	// Revision of the browser to use
 	Revision int
 
-	// Dir to download broweser. The default path for unix is "$HOME/.cache/rod",
-	// for Windows it's "%APPDATA%\rod".
+	// Dir to download broweser.
 	Dir string
 
 	// Log to print output
 	Logger io.Writer
 
-	// Lock a tcp port to prevent race downloading. Default is 2968 .
-	Lock int
+	// LockPort a tcp port to prevent race downloading. Default is 2968 .
+	LockPort int
 }
 
 // NewBrowser with default values
 func NewBrowser() *Browser {
-	homeDir := map[string]string{
-		"windows": filepath.Join(os.Getenv("APPDATA")),
-		"darwin":  filepath.Join(os.Getenv("HOME"), ".cache"),
-		"linux":   filepath.Join(os.Getenv("HOME"), ".cache"),
-	}[runtime.GOOS]
-
 	return &Browser{
 		Context:  context.Background(),
 		Revision: DefaultRevision,
 		Hosts:    []Host{HostGoogle, HostTaobao},
-		Dir:      filepath.Join(homeDir, "rod"),
+		Dir:      DefaultBrowserDir,
 		Logger:   os.Stdout,
-		Lock:     defaults.Lock,
+		LockPort: defaults.LockPort,
 	}
 }
 
@@ -167,8 +170,14 @@ func (lc *Browser) download(ctx context.Context, u string) error {
 	utils.E(err)
 	defer func() { _ = res.Body.Close() }()
 
-	size, err := strconv.ParseInt(res.Header.Get("Content-Length"), 10, 64)
-	utils.E(err)
+	size, _ := strconv.ParseInt(res.Header.Get("Content-Length"), 10, 64)
+
+	if res.StatusCode >= 400 || size < 1024*1024 {
+		b, err := ioutil.ReadAll(res.Body)
+		utils.E(err)
+		err = errors.New("failed to download the browser")
+		return fmt.Errorf("%w: %d %s", err, res.StatusCode, string(b))
+	}
 
 	progress := &progresser{
 		size:   int(size),
@@ -194,7 +203,7 @@ func (lc *Browser) httpClient() *http.Client {
 // Get is a smart helper to get the browser executable path.
 // If Destination doesn't exists it will download the browser to Destination.
 func (lc *Browser) Get() (string, error) {
-	defer leakless.LockPort(lc.Lock)()
+	defer leakless.LockPort(lc.LockPort)()
 
 	if lc.Exists() {
 		return lc.Destination(), nil
@@ -225,12 +234,13 @@ func LookPath() (found string, has bool) {
 			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 		},
 		"linux": {
-			"chromium",
-			"chromium-browser",
+			"chrome",
 			"google-chrome",
 			"/usr/bin/google-chrome",
 			"microsoft-edge",
 			"/usr/bin/microsoft-edge",
+			"chromium",
+			"chromium-browser",
 		},
 		"windows": append([]string{"chrome", "edge"}, expandWindowsExePaths(
 			`Google\Chrome\Application\chrome.exe`,
@@ -250,13 +260,16 @@ func LookPath() (found string, has bool) {
 	return
 }
 
+// interface for testing
+var openExec = exec.Command
+
 // Open tries to open the url via system's default browser.
 func Open(url string) {
 	// Windows doesn't support format [::]
 	url = strings.Replace(url, "[::]", "[::1]", 1)
 
 	if bin, has := LookPath(); has {
-		p := exec.Command(bin, url)
+		p := openExec(bin, url)
 		_ = p.Start()
 		_ = p.Process.Release()
 	}

@@ -17,8 +17,11 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/ysmood/leakless/lib"
+	"github.com/ysmood/leakless/pkg/shared"
+	"github.com/ysmood/leakless/pkg/utils"
 )
+
+var leaklessBinaries = map[string]string{}
 
 // Launcher struct
 type Launcher struct {
@@ -45,7 +48,7 @@ func (l *Launcher) Command(name string, arg ...string) *exec.Cmd {
 		bin = GetLeaklessBin()
 	}()
 
-	uid := fmt.Sprintf("%x", lib.RandBytes(16))
+	uid := fmt.Sprintf("%x", utils.RandBytes(16))
 	addr := l.serve(uid)
 
 	arg = append([]string{uid, addr, name}, arg...)
@@ -73,14 +76,21 @@ func (l *Launcher) serve(uid string) string {
 
 		conn, err := srv.Accept()
 		if err != nil {
+			l.err = err.Error()
+			l.pid <- 0
 			return
 		}
 
 		enc := json.NewEncoder(conn)
-		lib.E(enc.Encode(lib.Message{UID: uid}))
+		err = enc.Encode(shared.Message{UID: uid})
+		if err != nil {
+			l.err = err.Error()
+			l.pid <- 0
+			return
+		}
 
 		dec := json.NewDecoder(conn)
-		var msg lib.Message
+		var msg shared.Message
 		err = dec.Decode(&msg)
 		if err == nil {
 			l.err = msg.Error
@@ -92,7 +102,7 @@ func (l *Launcher) serve(uid string) string {
 	return srv.Addr().String()
 }
 
-var leaklessDir = filepath.Join(os.TempDir(), "leakless-"+lib.Version)
+var leaklessDir = filepath.Join(os.TempDir(), "leakless-"+shared.Version)
 
 // GetLeaklessBin returns the executable path of the guard, if it doesn't exists create one.
 func GetLeaklessBin() string {
@@ -102,18 +112,19 @@ func GetLeaklessBin() string {
 		bin += ".exe"
 	}
 
-	if !lib.FileExists(bin) {
-		raw, err := base64.StdEncoding.DecodeString(leaklessBin)
-		lib.E(err)
+	if !utils.FileExists(bin) {
+		name := utils.GetTarget().BinName()
+		raw, err := base64.StdEncoding.DecodeString(leaklessBinaries[name])
+		utils.E(err)
 		gr, err := gzip.NewReader(bytes.NewBuffer(raw))
-		lib.E(err)
+		utils.E(err)
 		data, err := ioutil.ReadAll(gr)
-		lib.E(err)
-		lib.E(gr.Close())
+		utils.E(err)
+		utils.E(gr.Close())
 
-		err = lib.OutputFile(bin, data, nil)
-		lib.E(err)
-		lib.E(os.Chmod(bin, 0755))
+		err = utils.OutputFile(bin, data, nil)
+		utils.E(err)
+		utils.E(os.Chmod(bin, 0755))
 	}
 
 	return bin
@@ -121,7 +132,8 @@ func GetLeaklessBin() string {
 
 // Support returns true if the OS is supported by leakless.
 func Support() bool {
-	return runtime.GOARCH == "amd64"
+	_, has := leaklessBinaries[utils.GetTarget().BinName()]
+	return has
 }
 
 // LockPort uses a tcp port to create a mutex lock for cross-process locking.

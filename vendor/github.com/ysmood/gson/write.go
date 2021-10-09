@@ -12,7 +12,7 @@ func New(v interface{}) JSON {
 	return JSON{&sync.Mutex{}, &v}
 }
 
-// NewFrom string
+// NewFrom json encoded string
 func NewFrom(s string) JSON {
 	return New([]byte(s))
 }

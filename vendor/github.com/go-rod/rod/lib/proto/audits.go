@@ -55,6 +55,9 @@ const (
 
 	// AuditsSameSiteCookieExclusionReasonExcludeSameSiteStrict enum const
 	AuditsSameSiteCookieExclusionReasonExcludeSameSiteStrict AuditsSameSiteCookieExclusionReason = "ExcludeSameSiteStrict"
+
+	// AuditsSameSiteCookieExclusionReasonExcludeInvalidSameParty enum const
+	AuditsSameSiteCookieExclusionReasonExcludeInvalidSameParty AuditsSameSiteCookieExclusionReason = "ExcludeInvalidSameParty"
 )
 
 // AuditsSameSiteCookieWarningReason ...
@@ -102,8 +105,14 @@ const (
 // information without the cookie.
 type AuditsSameSiteCookieIssueDetails struct {
 
-	// Cookie ...
-	Cookie *AuditsAffectedCookie `json:"cookie"`
+	// Cookie (optional) If AffectedCookie is not set then rawCookieLine contains the raw
+	// Set-Cookie header string. This hints at a problem where the
+	// cookie line is syntactically or semantically malformed in a way
+	// that no valid cookie could be created.
+	Cookie *AuditsAffectedCookie `json:"cookie,omitempty"`
+
+	// RawCookieLine (optional) ...
+	RawCookieLine string `json:"rawCookieLine,omitempty"`
 
 	// CookieWarningReasons ...
 	CookieWarningReasons []AuditsSameSiteCookieWarningReason `json:"cookieWarningReasons"`
@@ -484,11 +493,104 @@ type AuditsCorsIssueDetails struct {
 	// Request ...
 	Request *AuditsAffectedRequest `json:"request"`
 
+	// Location (optional) ...
+	Location *AuditsSourceCodeLocation `json:"location,omitempty"`
+
+	// InitiatorOrigin (optional) ...
+	InitiatorOrigin string `json:"initiatorOrigin,omitempty"`
+
 	// ResourceIPAddressSpace (optional) ...
 	ResourceIPAddressSpace NetworkIPAddressSpace `json:"resourceIPAddressSpace,omitempty"`
 
 	// ClientSecurityState (optional) ...
 	ClientSecurityState *NetworkClientSecurityState `json:"clientSecurityState,omitempty"`
+}
+
+// AuditsAttributionReportingIssueType ...
+type AuditsAttributionReportingIssueType string
+
+const (
+	// AuditsAttributionReportingIssueTypePermissionPolicyDisabled enum const
+	AuditsAttributionReportingIssueTypePermissionPolicyDisabled AuditsAttributionReportingIssueType = "PermissionPolicyDisabled"
+
+	// AuditsAttributionReportingIssueTypeInvalidAttributionSourceEventID enum const
+	AuditsAttributionReportingIssueTypeInvalidAttributionSourceEventID AuditsAttributionReportingIssueType = "InvalidAttributionSourceEventId"
+
+	// AuditsAttributionReportingIssueTypeInvalidAttributionData enum const
+	AuditsAttributionReportingIssueTypeInvalidAttributionData AuditsAttributionReportingIssueType = "InvalidAttributionData"
+
+	// AuditsAttributionReportingIssueTypeAttributionSourceUntrustworthyOrigin enum const
+	AuditsAttributionReportingIssueTypeAttributionSourceUntrustworthyOrigin AuditsAttributionReportingIssueType = "AttributionSourceUntrustworthyOrigin"
+
+	// AuditsAttributionReportingIssueTypeAttributionUntrustworthyOrigin enum const
+	AuditsAttributionReportingIssueTypeAttributionUntrustworthyOrigin AuditsAttributionReportingIssueType = "AttributionUntrustworthyOrigin"
+)
+
+// AuditsAttributionReportingIssueDetails Details for issues around "Attribution Reporting API" usage.
+// Explainer: https://github.com/WICG/conversion-measurement-api
+type AuditsAttributionReportingIssueDetails struct {
+
+	// ViolationType ...
+	ViolationType AuditsAttributionReportingIssueType `json:"violationType"`
+
+	// Frame (optional) ...
+	Frame *AuditsAffectedFrame `json:"frame,omitempty"`
+
+	// Request (optional) ...
+	Request *AuditsAffectedRequest `json:"request,omitempty"`
+
+	// ViolatingNodeID (optional) ...
+	ViolatingNodeID DOMBackendNodeID `json:"violatingNodeId,omitempty"`
+
+	// InvalidParameter (optional) ...
+	InvalidParameter string `json:"invalidParameter,omitempty"`
+}
+
+// AuditsQuirksModeIssueDetails Details for issues about documents in Quirks Mode
+// or Limited Quirks Mode that affects page layouting.
+type AuditsQuirksModeIssueDetails struct {
+
+	// IsLimitedQuirksMode If false, it means the document's mode is "quirks"
+	// instead of "limited-quirks".
+	IsLimitedQuirksMode bool `json:"isLimitedQuirksMode"`
+
+	// DocumentNodeID ...
+	DocumentNodeID DOMBackendNodeID `json:"documentNodeId"`
+
+	// URL ...
+	URL string `json:"url"`
+
+	// FrameID ...
+	FrameID PageFrameID `json:"frameId"`
+
+	// LoaderID ...
+	LoaderID NetworkLoaderID `json:"loaderId"`
+}
+
+// AuditsNavigatorUserAgentIssueDetails ...
+type AuditsNavigatorUserAgentIssueDetails struct {
+
+	// URL ...
+	URL string `json:"url"`
+
+	// Location (optional) ...
+	Location *AuditsSourceCodeLocation `json:"location,omitempty"`
+}
+
+// AuditsWasmCrossOriginModuleSharingIssueDetails ...
+type AuditsWasmCrossOriginModuleSharingIssueDetails struct {
+
+	// WasmModuleURL ...
+	WasmModuleURL string `json:"wasmModuleUrl"`
+
+	// SourceOrigin ...
+	SourceOrigin string `json:"sourceOrigin"`
+
+	// TargetOrigin ...
+	TargetOrigin string `json:"targetOrigin"`
+
+	// IsWarning ...
+	IsWarning bool `json:"isWarning"`
 }
 
 // AuditsInspectorIssueCode A unique identifier for the type of issue. Each type may use one of the
@@ -523,6 +625,18 @@ const (
 
 	// AuditsInspectorIssueCodeCorsIssue enum const
 	AuditsInspectorIssueCodeCorsIssue AuditsInspectorIssueCode = "CorsIssue"
+
+	// AuditsInspectorIssueCodeAttributionReportingIssue enum const
+	AuditsInspectorIssueCodeAttributionReportingIssue AuditsInspectorIssueCode = "AttributionReportingIssue"
+
+	// AuditsInspectorIssueCodeQuirksModeIssue enum const
+	AuditsInspectorIssueCodeQuirksModeIssue AuditsInspectorIssueCode = "QuirksModeIssue"
+
+	// AuditsInspectorIssueCodeNavigatorUserAgentIssue enum const
+	AuditsInspectorIssueCodeNavigatorUserAgentIssue AuditsInspectorIssueCode = "NavigatorUserAgentIssue"
+
+	// AuditsInspectorIssueCodeWasmCrossOriginModuleSharingIssue enum const
+	AuditsInspectorIssueCodeWasmCrossOriginModuleSharingIssue AuditsInspectorIssueCode = "WasmCrossOriginModuleSharingIssue"
 )
 
 // AuditsInspectorIssueDetails This struct holds a list of optional fields with additional information
@@ -556,7 +670,23 @@ type AuditsInspectorIssueDetails struct {
 
 	// CorsIssueDetails (optional) ...
 	CorsIssueDetails *AuditsCorsIssueDetails `json:"corsIssueDetails,omitempty"`
+
+	// AttributionReportingIssueDetails (optional) ...
+	AttributionReportingIssueDetails *AuditsAttributionReportingIssueDetails `json:"attributionReportingIssueDetails,omitempty"`
+
+	// QuirksModeIssueDetails (optional) ...
+	QuirksModeIssueDetails *AuditsQuirksModeIssueDetails `json:"quirksModeIssueDetails,omitempty"`
+
+	// NavigatorUserAgentIssueDetails (optional) ...
+	NavigatorUserAgentIssueDetails *AuditsNavigatorUserAgentIssueDetails `json:"navigatorUserAgentIssueDetails,omitempty"`
+
+	// WasmCrossOriginModuleSharingIssue (optional) ...
+	WasmCrossOriginModuleSharingIssue *AuditsWasmCrossOriginModuleSharingIssueDetails `json:"wasmCrossOriginModuleSharingIssue,omitempty"`
 }
+
+// AuditsIssueID A unique id for a DevTools inspector issue. Allows other entities (e.g.
+// exceptions, CDP message, console messages, etc.) to reference an issue.
+type AuditsIssueID string
 
 // AuditsInspectorIssue An inspector issue reported from the back-end.
 type AuditsInspectorIssue struct {
@@ -566,6 +696,10 @@ type AuditsInspectorIssue struct {
 
 	// Details ...
 	Details *AuditsInspectorIssueDetails `json:"details"`
+
+	// IssueID (optional) A unique id for this issue. May be omitted if no other entity (e.g.
+	// exception, CDP message, etc.) is referencing this issue.
+	IssueID AuditsIssueID `json:"issueId,omitempty"`
 }
 
 // AuditsGetEncodedResponseEncoding enum
@@ -650,6 +784,9 @@ func (m AuditsEnable) Call(c Client) error {
 // AuditsCheckContrast Runs the contrast check for the target page. Found issues are reported
 // using Audits.issueAdded event.
 type AuditsCheckContrast struct {
+
+	// ReportAAA (optional) Whether to report WCAG AAA level issues. Default is false.
+	ReportAAA bool `json:"reportAAA,omitempty"`
 }
 
 // ProtoReq name

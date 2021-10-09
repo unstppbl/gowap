@@ -1,8 +1,8 @@
 # Gowap [[Wappalyzer](https://github.com/AliasIO/Wappalyzer) implementation in Go]
 
-[![Build Status](https://github.com/unstppbl/gowap/workflows/Build%20and%20test/badge.svg)](https://github.com/dranih/gowap/actions?workflow=Build%20and%20test)
-[![coverage](https://codecov.io/gh/unstppbl/gowap/branch/master/graph/badge.svg)](https://codecov.io/gh/dranih/gowap)
-[![report card](https://goreportcard.com/badge/github.com/unstppbl/gowap)](https://goreportcard.com/report/github.com/dranih/gowap)
+[![Build Status](https://github.com/unstppbl/gowap/workflows/Build%20and%20test/badge.svg)](https://github.com/unstppbl/gowap/actions?workflow=Build%20and%20test)
+[![coverage](https://codecov.io/gh/unstppbl/gowap/branch/master/graph/badge.svg)](https://codecov.io/gh/unstppbl/gowap)
+[![report card](https://goreportcard.com/badge/github.com/unstppbl/gowap)](https://goreportcard.com/report/github.com/unstppbl/gowap)
 
   - JS analysing (using [Rod](https://github.com/go-rod/rod))
   - DNS scraping

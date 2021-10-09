@@ -1,8 +1,10 @@
 package launcher
 
 import (
+	"context"
 	"errors"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,27 +19,35 @@ var _ io.Writer = &URLParser{}
 
 // URLParser to get control url from stderr
 type URLParser struct {
-	sync.Mutex
-
 	URL    chan string
 	Buffer string // buffer for the browser stdout
 
+	lock *sync.Mutex
+	ctx  context.Context
 	done bool
 }
 
 // NewURLParser instance
 func NewURLParser() *URLParser {
 	return &URLParser{
-		URL: make(chan string),
+		URL:  make(chan string),
+		lock: &sync.Mutex{},
+		ctx:  context.Background(),
 	}
 }
 
 var regWS = regexp.MustCompile(`ws://.+/`)
 
+// Context sets the context
+func (r *URLParser) Context(ctx context.Context) *URLParser {
+	r.ctx = ctx
+	return r
+}
+
 // Write interface
 func (r *URLParser) Write(p []byte) (n int, err error) {
-	r.Lock()
-	defer r.Unlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	if !r.done {
 		r.Buffer += string(p)
@@ -47,7 +57,11 @@ func (r *URLParser) Write(p []byte) (n int, err error) {
 			u, err := url.Parse(strings.TrimSpace(str))
 			utils.E(err)
 
-			r.URL <- "http://" + u.Host
+			select {
+			case <-r.ctx.Done():
+			case r.URL <- "http://" + u.Host:
+			}
+
 			r.done = true
 			r.Buffer = ""
 		}
@@ -58,6 +72,9 @@ func (r *URLParser) Write(p []byte) (n int, err error) {
 
 // Err returns the common error parsed from stdout and stderr
 func (r *URLParser) Err() error {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
 	msg := "[launcher] Failed to get the debug url: "
 
 	if strings.Contains(r.Buffer, "error while loading shared libraries") {
@@ -67,7 +84,7 @@ func (r *URLParser) Err() error {
 	return errors.New(msg + r.Buffer)
 }
 
-// MustResolveURL is similar to FetchURL
+// MustResolveURL is similar to ResolveURL
 func MustResolveURL(u string) string {
 	u, err := ResolveURL(u)
 	utils.E(err)
@@ -82,6 +99,10 @@ var regProtocol = regexp.MustCompile(`^\w+://`)
 // "https://host:9222" "http://host:9222". The return string will look like:
 // "ws://host:9222/devtools/browser/4371405f-84df-4ad6-9e0f-eab81f7521cc"
 func ResolveURL(u string) (string, error) {
+	if u == "" {
+		u = "9222"
+	}
+
 	u = strings.TrimSpace(u)
 	u = regPort.ReplaceAllString(u, "127.0.0.1:$1")
 
@@ -101,6 +122,10 @@ func ResolveURL(u string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer func() { _ = res.Body.Close() }()
 
-	return gson.New(res.Body).Get("webSocketDebuggerUrl").Str(), nil
+	data, err := ioutil.ReadAll(res.Body)
+	utils.E(err)
+
+	return gson.New(data).Get("webSocketDebuggerUrl").Str(), nil
 }

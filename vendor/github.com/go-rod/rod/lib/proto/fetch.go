@@ -15,7 +15,7 @@ type FetchRequestID string
 
 // FetchRequestStage Stages of the request to handle. Request will intercept before the request is
 // sent. Response will intercept after the response is received (but before response
-// body is received.
+// body is received).
 type FetchRequestStage string
 
 const (
@@ -29,8 +29,8 @@ const (
 // FetchRequestPattern ...
 type FetchRequestPattern struct {
 
-	// URLPattern (optional) Wildcards ('*' -> zero or more, '?' -> exactly one) are allowed. Escape character is
-	// backslash. Omitting is equivalent to "*".
+	// URLPattern (optional) Wildcards (`'*'` -> zero or more, `'?'` -> exactly one) are allowed. Escape character is
+	// backslash. Omitting is equivalent to `"*"`.
 	URLPattern string `json:"urlPattern,omitempty"`
 
 	// ResourceType (optional) If set, only requests for matching resource types will be intercepted.

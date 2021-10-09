@@ -60,11 +60,14 @@ func MultiLogger(list ...Logger) Log {
 	})
 }
 
+// Panic is the same as the built-in panic
+var Panic = func(v interface{}) { panic(v) }
+
 // E if the last arg is error, panic it
 func E(args ...interface{}) []interface{} {
 	err, ok := args[len(args)-1].(error)
 	if ok {
-		panic(err)
+		Panic(err)
 	}
 	return args
 }
@@ -259,9 +262,19 @@ func FileExists(path string) bool {
 
 // Exec command
 func Exec(name string, args ...string) {
+	fmt.Println()
+	fmt.Println("[[exec]]:")
+	fmt.Println(name, strings.Join(args, " "))
+
 	cmd := exec.Command(name, args...)
 	SetCmdStdPipe(cmd)
 	E(cmd.Run())
+}
+
+// ExecLine of command
+func ExecLine(line string) {
+	args := strings.Split(line, " ")
+	Exec(args[0], args[1:]...)
 }
 
 // SetCmdStdPipe command

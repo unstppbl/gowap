@@ -11,3 +11,16 @@ Not using the PID is because after a process exits, a newly created process may 
 ## How to Use
 
 See the [examples](example_test.go).
+
+## Custom build for `GOOS` or `GOARCH`
+
+Such as if you want to support FreeBSD, you can clone this project and modify the [targets.go](cmd/pack/targets.go) to something like:
+
+```go
+var targets = []utils.Target{
+    "freebsd/amd64",
+}
+```
+
+Then run `go generate` and use [replace](https://golang.org/ref/mod#go-mod-file-replace) in the project that will use leakless.
+You can keep this fork of leakless to serve your own interest.

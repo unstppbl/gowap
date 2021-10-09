@@ -3,7 +3,6 @@
 //go:generate go run ./lib/proto/generate
 //go:generate go run ./lib/js/generate
 //go:generate go run ./lib/assets/generate
-//go:generate go run ./lib/devices/generate
 //go:generate go run ./lib/utils/lint
 
 package rod
@@ -35,6 +34,8 @@ type Browser struct {
 	// BrowserContextID is the id for incognito window
 	BrowserContextID proto.BrowserBrowserContextID
 
+	e eFunc
+
 	ctx context.Context
 
 	sleeper func() utils.Sleeper
@@ -57,9 +58,11 @@ type Browser struct {
 	states *sync.Map
 }
 
-// New creates a controller
+// New creates a controller.
+// DefaultDevice is set to devices.LaptopWithMDPIScreen.Landescape() . You can use
+// NoDefaultDevice to disable it.
 func New() *Browser {
-	return &Browser{
+	return (&Browser{
 		ctx:           context.Background(),
 		sleeper:       DefaultSleeper,
 		slowMotion:    defaults.Slow,
@@ -69,7 +72,7 @@ func New() *Browser {
 		defaultDevice: devices.LaptopWithMDPIScreen.Landescape(),
 		targetsLock:   &sync.Mutex{},
 		states:        &sync.Map{},
-	}
+	}).WithPanic(utils.Panic)
 }
 
 // Incognito creates a new incognito browser
@@ -143,7 +146,11 @@ func (b *Browser) Connect() error {
 	if b.client == nil {
 		u := defaults.URL
 		if u == "" {
-			u = launcher.New().Context(b.ctx).MustLaunch()
+			var err error
+			u, err = launcher.New().Context(b.ctx).Launch()
+			if err != nil {
+				return err
+			}
 		}
 		b.client = cdp.New(u)
 	}
@@ -243,6 +250,7 @@ func (b *Browser) Call(ctx context.Context, sessionID, methodName string, params
 // PageFromSession is used for low-level debugging
 func (b *Browser) PageFromSession(sessionID proto.TargetSessionID) *Page {
 	return &Page{
+		e:         b.e,
 		ctx:       b.ctx,
 		sleeper:   b.sleeper,
 		browser:   b,
@@ -269,14 +277,16 @@ func (b *Browser) PageFromTarget(targetID proto.TargetTargetID) (*Page, error) {
 	}
 
 	page = &Page{
-		ctx:       b.ctx,
-		sleeper:   b.sleeper,
-		browser:   b,
-		TargetID:  targetID,
-		SessionID: session.SessionID,
-		FrameID:   proto.PageFrameID(targetID),
-		jsCtxLock: &sync.Mutex{},
-		jsCtxID:   new(proto.RuntimeRemoteObjectID),
+		e:           b.e,
+		ctx:         b.ctx,
+		sleeper:     b.sleeper,
+		browser:     b,
+		TargetID:    targetID,
+		SessionID:   session.SessionID,
+		FrameID:     proto.PageFrameID(targetID),
+		jsCtxLock:   &sync.Mutex{},
+		jsCtxID:     new(proto.RuntimeRemoteObjectID),
+		helpersLock: &sync.Mutex{},
 	}
 
 	page.root = page
@@ -382,7 +392,7 @@ func (b *Browser) eachEvent(sessionID proto.TargetSessionID, callbacks ...interf
 				msg.Load(e.Interface().(proto.Event))
 				args := []reflect.Value{e}
 				if cbVal.Type().NumIn() == 2 {
-					args = append(args, reflect.ValueOf(sessionID))
+					args = append(args, reflect.ValueOf(msg.SessionID))
 				}
 				res := cbVal.Call(args)
 				if len(res) > 0 {

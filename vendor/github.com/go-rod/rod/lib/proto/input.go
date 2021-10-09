@@ -83,6 +83,80 @@ const (
 	InputMouseButtonForward InputMouseButton = "forward"
 )
 
+// InputDragDataItem (experimental) ...
+type InputDragDataItem struct {
+
+	// MIMEType Mime type of the dragged data.
+	MIMEType string `json:"mimeType"`
+
+	// Data Depending of the value of `mimeType`, it contains the dragged link,
+	// text, HTML markup or any other data.
+	Data string `json:"data"`
+
+	// Title (optional) Title associated with a link. Only valid when `mimeType` == "text/uri-list".
+	Title string `json:"title,omitempty"`
+
+	// BaseURL (optional) Stores the base URL for the contained markup. Only valid when `mimeType`
+	// == "text/html".
+	BaseURL string `json:"baseURL,omitempty"`
+}
+
+// InputDragData (experimental) ...
+type InputDragData struct {
+
+	// Items ...
+	Items []*InputDragDataItem `json:"items"`
+
+	// DragOperationsMask Bit field representing allowed drag operations. Copy = 1, Link = 2, Move = 16
+	DragOperationsMask int `json:"dragOperationsMask"`
+}
+
+// InputDispatchDragEventType enum
+type InputDispatchDragEventType string
+
+const (
+	// InputDispatchDragEventTypeDragEnter enum const
+	InputDispatchDragEventTypeDragEnter InputDispatchDragEventType = "dragEnter"
+
+	// InputDispatchDragEventTypeDragOver enum const
+	InputDispatchDragEventTypeDragOver InputDispatchDragEventType = "dragOver"
+
+	// InputDispatchDragEventTypeDrop enum const
+	InputDispatchDragEventTypeDrop InputDispatchDragEventType = "drop"
+
+	// InputDispatchDragEventTypeDragCancel enum const
+	InputDispatchDragEventTypeDragCancel InputDispatchDragEventType = "dragCancel"
+)
+
+// InputDispatchDragEvent (experimental) Dispatches a drag event into the page.
+type InputDispatchDragEvent struct {
+
+	// Type Type of the drag event.
+	Type InputDispatchDragEventType `json:"type"`
+
+	// X X coordinate of the event relative to the main frame's viewport in CSS pixels.
+	X float64 `json:"x"`
+
+	// Y Y coordinate of the event relative to the main frame's viewport in CSS pixels. 0 refers to
+	// the top of the viewport and Y increases as it proceeds towards the bottom of the viewport.
+	Y float64 `json:"y"`
+
+	// Data ...
+	Data *InputDragData `json:"data"`
+
+	// Modifiers (optional) Bit field representing pressed modifier keys. Alt=1, Ctrl=2, Meta/Command=4, Shift=8
+	// (default: 0).
+	Modifiers int `json:"modifiers,omitempty"`
+}
+
+// ProtoReq name
+func (m InputDispatchDragEvent) ProtoReq() string { return "Input.dispatchDragEvent" }
+
+// Call sends the request
+func (m InputDispatchDragEvent) Call(c Client) error {
+	return call(m.ProtoReq(), m, nil, c)
+}
+
 // InputDispatchKeyEventType enum
 type InputDispatchKeyEventType string
 
@@ -388,6 +462,22 @@ func (m InputSetIgnoreInputEvents) Call(c Client) error {
 	return call(m.ProtoReq(), m, nil, c)
 }
 
+// InputSetInterceptDrags (experimental) Prevents default drag and drop behavior and instead emits `Input.dragIntercepted` events.
+// Drag and drop behavior can be directly controlled via `Input.dispatchDragEvent`.
+type InputSetInterceptDrags struct {
+
+	// Enabled ...
+	Enabled bool `json:"enabled"`
+}
+
+// ProtoReq name
+func (m InputSetInterceptDrags) ProtoReq() string { return "Input.setInterceptDrags" }
+
+// Call sends the request
+func (m InputSetInterceptDrags) Call(c Client) error {
+	return call(m.ProtoReq(), m, nil, c)
+}
+
 // InputSynthesizePinchGesture (experimental) Synthesizes a pinch gesture over a time period by issuing appropriate touch events.
 type InputSynthesizePinchGesture struct {
 
@@ -493,4 +583,17 @@ func (m InputSynthesizeTapGesture) ProtoReq() string { return "Input.synthesizeT
 // Call sends the request
 func (m InputSynthesizeTapGesture) Call(c Client) error {
 	return call(m.ProtoReq(), m, nil, c)
+}
+
+// InputDragIntercepted (experimental) Emitted only when `Input.setInterceptDrags` is enabled. Use this data with `Input.dispatchDragEvent` to
+// restore normal drag and drop behavior.
+type InputDragIntercepted struct {
+
+	// Data ...
+	Data *InputDragData `json:"data"`
+}
+
+// ProtoEvent name
+func (evt InputDragIntercepted) ProtoEvent() string {
+	return "Input.dragIntercepted"
 }

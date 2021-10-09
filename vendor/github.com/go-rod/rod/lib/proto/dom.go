@@ -74,6 +74,9 @@ const (
 	// DOMPseudoTypeGrammarError enum const
 	DOMPseudoTypeGrammarError DOMPseudoType = "grammar-error"
 
+	// DOMPseudoTypeHighlight enum const
+	DOMPseudoTypeHighlight DOMPseudoType = "highlight"
+
 	// DOMPseudoTypeFirstLineInherited enum const
 	DOMPseudoTypeFirstLineInherited DOMPseudoType = "first-line-inherited"
 
@@ -114,6 +117,20 @@ const (
 
 	// DOMShadowRootTypeClosed enum const
 	DOMShadowRootTypeClosed DOMShadowRootType = "closed"
+)
+
+// DOMCompatibilityMode Document compatibility mode.
+type DOMCompatibilityMode string
+
+const (
+	// DOMCompatibilityModeQuirksMode enum const
+	DOMCompatibilityModeQuirksMode DOMCompatibilityMode = "QuirksMode"
+
+	// DOMCompatibilityModeLimitedQuirksMode enum const
+	DOMCompatibilityModeLimitedQuirksMode DOMCompatibilityMode = "LimitedQuirksMode"
+
+	// DOMCompatibilityModeNoQuirksMode enum const
+	DOMCompatibilityModeNoQuirksMode DOMCompatibilityMode = "NoQuirksMode"
 )
 
 // DOMNode DOM interaction is implemented in terms of mirror objects that represent the actual DOM nodes.
@@ -197,7 +214,9 @@ type DOMNode struct {
 	// PseudoElements (optional) Pseudo elements associated with this node.
 	PseudoElements []*DOMNode `json:"pseudoElements,omitempty"`
 
-	// ImportedDocument (optional) Import document for the HTMLImport links.
+	// ImportedDocument (deprecated) (optional) Deprecated, as the HTML Imports API has been removed (crbug.com/937746).
+	// This property used to return the imported document for the HTMLImport links.
+	// The property is always undefined now.
 	ImportedDocument *DOMNode `json:"importedDocument,omitempty"`
 
 	// DistributedNodes (optional) Distributed nodes for given insertion point.
@@ -205,6 +224,9 @@ type DOMNode struct {
 
 	// IsSVG (optional) Whether the node is SVG.
 	IsSVG bool `json:"isSVG,omitempty"`
+
+	// CompatibilityMode (optional) ...
+	CompatibilityMode DOMCompatibilityMode `json:"compatibilityMode,omitempty"`
 }
 
 // DOMRGBA A structure holding an RGBA color.
@@ -1351,6 +1373,36 @@ type DOMGetFrameOwnerResult struct {
 	BackendNodeID DOMBackendNodeID `json:"backendNodeId"`
 
 	// NodeID (optional) Id of the node at given coordinates, only when enabled and requested document.
+	NodeID DOMNodeID `json:"nodeId,omitempty"`
+}
+
+// DOMGetContainerForNode (experimental) Returns the container of the given node based on container query conditions.
+// If containerName is given, it will find the nearest container with a matching name;
+// otherwise it will find the nearest container regardless of its container name.
+type DOMGetContainerForNode struct {
+
+	// NodeID ...
+	NodeID DOMNodeID `json:"nodeId"`
+
+	// ContainerName (optional) ...
+	ContainerName string `json:"containerName,omitempty"`
+}
+
+// ProtoReq name
+func (m DOMGetContainerForNode) ProtoReq() string { return "DOM.getContainerForNode" }
+
+// Call the request
+func (m DOMGetContainerForNode) Call(c Client) (*DOMGetContainerForNodeResult, error) {
+	var res DOMGetContainerForNodeResult
+	return &res, call(m.ProtoReq(), m, &res, c)
+}
+
+// DOMGetContainerForNodeResult (experimental) Returns the container of the given node based on container query conditions.
+// If containerName is given, it will find the nearest container with a matching name;
+// otherwise it will find the nearest container regardless of its container name.
+type DOMGetContainerForNodeResult struct {
+
+	// NodeID (optional) The container node for the given node, or null if not found.
 	NodeID DOMNodeID `json:"nodeId,omitempty"`
 }
 

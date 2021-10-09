@@ -3,11 +3,10 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/go-rod/rod.svg)](https://pkg.go.dev/github.com/go-rod/rod)
 [![Discord Chat](https://img.shields.io/discord/719933559456006165.svg)][discord room]
 
-## [Documentation](https://go-rod.github.io/) | [API reference](https://pkg.go.dev/github.com/go-rod/rod?tab=doc)
+## [Documentation](https://go-rod.github.io/) | [API reference](https://pkg.go.dev/github.com/go-rod/rod?tab=doc) | [Management](https://github.com/orgs/go-rod/projects/1)
 
 Rod is a high-level driver directly based on [DevTools Protocol](https://chromedevtools.github.io/devtools-protocol).
-It's designed for web automation and scraping.
-Rod is designed for both high-level and low-level use, senior programmers can use the low-level packages and functions to easily
+It's designed for web automation and scraping for both high-level and low-level use, senior developers can use the low-level packages and functions to easily
 customize or build up their own version of Rod, the high-level functions are just examples to build a default version of Rod.
 
 ## Features
@@ -30,25 +29,12 @@ Please check the [examples_test.go](examples_test.go) file first, then check the
 For more detailed examples, please search the unit tests.
 Such as the usage of method `HandleAuth`, you can search all the `*_test.go` files that contain `HandleAuth`,
 for example, use Github online [search in repository](https://github.com/go-rod/rod/search?q=HandleAuth&unscoped_q=HandleAuth).
-You can also search the GitHub issues, they contain a lot of usage examples too.
+You can also search the GitHub [issues](https://github.com/go-rod/rod/issues) or [discussions](https://github.com/go-rod/rod/discussions),
+a lot of usage examples are recorded there.
 
 [Here](lib/examples/compare-chromedp) is a comparison of the examples between rod and Chromedp.
 
-If you have questions, please raise an issue or join the [chat room][discord room].
-
-## How it works
-
-Here's the common start process of rod:
-
-1. Try to connect to a Devtools endpoint (WebSocket), if not found try to launch a local browser, if still not found try to download one, then connect again. The lib to handle it is [launcher](lib/launcher).
-
-1. Use the JSON-RPC to talk to the Devtools endpoint to control the browser. The lib handles it is [cdp](lib/cdp).
-
-1. Use the type definitions of the JSON-RPC to perform high-level actions. The lib handles it is [proto](lib/proto).
-
-Object model:
-
-![object model](fixtures/object-model.svg)
+If you have questions, please raise an [issues](https://github.com/go-rod/rod/issues)/[discussions](https://github.com/go-rod/rod/discussions) or join the [chat room][discord room].
 
 ## Join us
 
@@ -61,3 +47,4 @@ We use Github Projects to manage tasks, you can see the priority and progress of
 If you want to contribute code for this project please read the [Contributor Guide](.github/CONTRIBUTING.md).
 
 [discord room]: https://discord.gg/CpevuvY
+[中文文档]: https://go-rod.github.io/i18n/zh-CN

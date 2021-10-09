@@ -165,7 +165,7 @@ func (j JSON) Map() map[string]JSON {
 		return obj
 	}
 
-	return make(map[string]JSON, 0)
+	return make(map[string]JSON)
 }
 
 // Arr of JSON

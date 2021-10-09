@@ -38,6 +38,8 @@ type Page struct {
 	// A page can attached to multiple controllers, the browser uses it distinguish controllers.
 	SessionID proto.TargetSessionID
 
+	e eFunc
+
 	ctx context.Context
 
 	root *Page
@@ -53,9 +55,10 @@ type Page struct {
 
 	element *Element // iframe only
 
-	jsCtxLock *sync.Mutex
-	jsCtxID   *proto.RuntimeRemoteObjectID // use pointer so that page clones can share the change
-	helpers   map[proto.RuntimeRemoteObjectID]map[string]proto.RuntimeRemoteObjectID
+	jsCtxLock   *sync.Mutex
+	jsCtxID     *proto.RuntimeRemoteObjectID // use pointer so that page clones can share the change
+	helpersLock *sync.Mutex
+	helpers     map[proto.RuntimeRemoteObjectID]map[string]proto.RuntimeRemoteObjectID
 }
 
 // String interface
@@ -75,6 +78,11 @@ func (p *Page) IsIframe() bool {
 // GetSessionID interface
 func (p *Page) GetSessionID() proto.TargetSessionID {
 	return p.SessionID
+}
+
+// Browser of the page
+func (p *Page) Browser() *Browser {
+	return p.browser
 }
 
 // Info of the page, such as the URL or title of the page
@@ -334,7 +342,7 @@ func (p *Page) HandleDialog() (
 		}
 }
 
-// Screenshot options: https://chromedevtools.github.io/devtools-protocol/tot/Page#method-captureScreenshot
+// Screenshot captures the screenshot of current page.
 func (p *Page) Screenshot(fullpage bool, req *proto.PageCaptureScreenshot) ([]byte, error) {
 	if req == nil {
 		req = &proto.PageCaptureScreenshot{}
@@ -572,7 +580,7 @@ func (p *Page) EvalOnNewDocument(js string) (remove func() error, err error) {
 // Wait until the js returns true
 func (p *Page) Wait(this *proto.RuntimeRemoteObject, js string, params []interface{}) error {
 	return utils.Retry(p.ctx, p.sleeper(), func() (bool, error) {
-		opts := Eval(js, params...).This(this)
+		opts := Eval(js, params...).ByPromise().This(this)
 
 		res, err := p.Evaluate(opts)
 		if err != nil {
@@ -581,6 +589,11 @@ func (p *Page) Wait(this *proto.RuntimeRemoteObject, js string, params []interfa
 
 		return res.Value.Bool(), nil
 	})
+}
+
+// WaitElementsMoreThan Wait until there are more than <num> <selector> elements.
+func (p *Page) WaitElementsMoreThan(selector string, num int) error {
+	return p.Wait(nil, `(s, n) => document.querySelectorAll(s).length > n`, []interface{}{selector, num})
 }
 
 // ObjectToJSON by object id
@@ -620,6 +633,7 @@ func (p *Page) ElementFromObject(obj *proto.RuntimeRemoteObject) (*Element, erro
 	}
 
 	return &Element{
+		e:       p.e,
 		ctx:     p.ctx,
 		sleeper: p.sleeper,
 		page:    p,

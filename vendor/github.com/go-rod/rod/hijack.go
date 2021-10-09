@@ -64,7 +64,7 @@ func (r *HijackRouter) initEvents() *HijackRouter {
 
 	_ = r.enable.Call(r.client)
 
-	r.run = r.browser.Context(eventCtx).eachEvent(proto.TargetSessionID(sessionID), func(e *proto.FetchRequestPaused) bool {
+	r.run = r.browser.Context(eventCtx).eachEvent(sessionID, func(e *proto.FetchRequestPaused) bool {
 		go func() {
 			ctx := r.new(eventCtx, e)
 			for _, h := range r.handlers {
@@ -174,6 +174,8 @@ func (r *HijackRouter) new(ctx context.Context, e *proto.FetchRequestPaused) *Hi
 			},
 		},
 		OnError: func(err error) {},
+
+		browser: r.browser,
 	}
 }
 
@@ -208,6 +210,8 @@ type Hijack struct {
 
 	// CustomState is used to store things for this context
 	CustomState interface{}
+
+	browser *Browser
 }
 
 // ContinueRequest without hijacking. The RequestID will be set by the router, you don't have to set it.
@@ -224,7 +228,7 @@ func (h *Hijack) LoadResponse(client *http.Client, loadBody bool) error {
 
 	defer func() { _ = res.Body.Close() }()
 
-	h.Response.payload.ResponseCode = int(res.StatusCode)
+	h.Response.payload.ResponseCode = res.StatusCode
 
 	list := []string{}
 	for k, vs := range res.Header {
@@ -316,6 +320,11 @@ func (ctx *HijackRequest) SetBody(obj interface{}) *HijackRequest {
 	return ctx
 }
 
+// IsNavigation determines whether the request is a navigation request
+func (ctx *HijackRequest) IsNavigation() bool {
+	return ctx.Type() == proto.NetworkResourceTypeDocument
+}
+
 // HijackResponse context
 type HijackResponse struct {
 	payload *proto.FetchFulfillRequest
@@ -332,7 +341,8 @@ func (ctx *HijackResponse) Body() string {
 	return string(ctx.payload.Body)
 }
 
-// Headers of the payload
+// Headers returns the clone of response headers.
+// If you want to modify the response headers use HijackResponse.SetHeader .
 func (ctx *HijackResponse) Headers() http.Header {
 	header := http.Header{}
 

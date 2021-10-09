@@ -26,6 +26,8 @@ var _ proto.Sessionable = &Element{}
 type Element struct {
 	Object *proto.RuntimeRemoteObject
 
+	e eFunc
+
 	ctx context.Context
 
 	sleeper func() utils.Sleeper
@@ -43,7 +45,13 @@ func (el *Element) String() string {
 	return fmt.Sprintf("<%s>", el.Object.Description)
 }
 
-// Focus sets focus on the specified element
+// Page of the element
+func (el *Element) Page() *Page {
+	return el.page
+}
+
+// Focus sets focus on the specified element.
+// Before the action, it will try to scroll to the element.
 func (el *Element) Focus() error {
 	err := el.ScrollIntoView()
 	if err != nil {
@@ -69,29 +77,29 @@ func (el *Element) ScrollIntoView() error {
 }
 
 // Hover the mouse over the center of the element.
-// It will try to scroll to the element and wait until it's interactable.
+// Before the action, it will try to scroll to the element and wait until it's interactable.
 func (el *Element) Hover() error {
-	err := el.ScrollIntoView()
+	pt, err := el.WaitInteractable()
 	if err != nil {
 		return err
 	}
 
-	pt, err := el.Interactable()
+	return el.page.Mouse.Move(pt.X, pt.Y, 1)
+}
+
+// MoveMouseOut of the current element
+func (el *Element) MoveMouseOut() error {
+	shape, err := el.Shape()
 	if err != nil {
 		return err
 	}
-
-	err = el.page.Mouse.Move(pt.X, pt.Y, 1)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	box := shape.Box()
+	return el.page.Mouse.Move(box.X+box.Width, box.Y, 1)
 }
 
 // Click will press then release the button just like a human.
-// It will try to scroll to the element, hover the mouse over it,
-// wait until the it's interactable and enabled first.
+// Before the action, it will try to scroll to the element, hover the mouse over it,
+// wait until the it's interactable and enabled.
 func (el *Element) Click(button proto.InputMouseButton) error {
 	err := el.Hover()
 	if err != nil {
@@ -109,7 +117,7 @@ func (el *Element) Click(button proto.InputMouseButton) error {
 }
 
 // Tap will scroll to the button and tap it just like a human.
-// It will try to scroll to the element, wait until the it's interactable and enabled first.
+// Before the action, it will try to scroll to the element and wait until it's interactable and enabled.
 func (el *Element) Tap() error {
 	err := el.ScrollIntoView()
 	if err != nil {
@@ -121,7 +129,7 @@ func (el *Element) Tap() error {
 		return err
 	}
 
-	pt, err := el.Interactable()
+	pt, err := el.WaitInteractable()
 	if err != nil {
 		return err
 	}
@@ -190,16 +198,16 @@ func (el *Element) Interactable() (pt *proto.Point, err error) {
 // A 4-gon is not necessary a rectangle. 4-gons can be apart from each other.
 // For example, we use 2 4-gons to describe the shape below:
 //
-//     ┌────────┐   ┌────────┐
-//     │    ┌───┘ = └────────┘ + ┌────┐
-//     └────┘                    └────┘
+//       ____________          ____________
+//      /        ___/    =    /___________/    +     _________
+//     /________/                                   /________/
 //
 func (el *Element) Shape() (*proto.DOMGetContentQuadsResult, error) {
 	return proto.DOMGetContentQuads{ObjectID: el.id()}.Call(el)
 }
 
 // Press is similar with Keyboard.Press.
-// It will try to scroll to the element and focus on it first.
+// Before the action, it will try to scroll to the element and focus on it.
 func (el *Element) Press(keys ...rune) error {
 	err := el.Focus()
 	if err != nil {
@@ -210,7 +218,7 @@ func (el *Element) Press(keys ...rune) error {
 }
 
 // SelectText selects the text that matches the regular expression.
-// It will try to scroll to the element and focus on it first.
+// Before the action, it will try to scroll to the element and focus on it.
 func (el *Element) SelectText(regex string) error {
 	err := el.Focus()
 	if err != nil {
@@ -225,7 +233,7 @@ func (el *Element) SelectText(regex string) error {
 }
 
 // SelectAllText selects all text
-// It will try to scroll to the element and focus on it first.
+// Before the action, it will try to scroll to the element and focus on it.
 func (el *Element) SelectAllText() error {
 	err := el.Focus()
 	if err != nil {
@@ -240,7 +248,7 @@ func (el *Element) SelectAllText() error {
 }
 
 // Input focuses on the element and input text to it.
-// It will scroll to the element, wait until it's visible, enabled and writable first.
+// Before the action, it will scroll to the element, wait until it's visible, enabled and writable.
 // To empty the input you can use something like el.SelectAllText().MustInput("")
 func (el *Element) Input(text string) error {
 	err := el.Focus()
@@ -275,7 +283,7 @@ func (el *Element) Input(text string) error {
 }
 
 // InputTime focuses on the element and input time to it.
-// It will scroll to the element, wait until it's visible, enabled and writable first.
+// Before the action, it will scroll to the element, wait until it's visible, enabled and writable.
 // It will wait until the element is visible, enabled and writable.
 func (el *Element) InputTime(t time.Time) error {
 	err := el.Focus()
@@ -311,7 +319,8 @@ func (el *Element) Blur() error {
 }
 
 // Select the children option elements that match the selectors.
-// It will scroll to the element, wait until it's visible first.
+// Before the action, it will scroll to the element, wait until it's visible.
+// If no option matches the selectors, it will return ErrElementNotFound.
 func (el *Element) Select(selectors []string, selected bool, t SelectorType) error {
 	err := el.Focus()
 	if err != nil {
@@ -326,8 +335,14 @@ func (el *Element) Select(selectors []string, selected bool, t SelectorType) err
 	defer el.tryTrace(TraceTypeInput, fmt.Sprintf(`select "%s"`, strings.Join(selectors, "; ")))()
 	el.page.browser.trySlowmotion()
 
-	_, err = el.Evaluate(evalHelper(js.Select, selectors, selected, t).ByUser())
-	return err
+	res, err := el.Evaluate(evalHelper(js.Select, selectors, selected, t).ByUser())
+	if err != nil {
+		return err
+	}
+	if !res.Value.Bool() {
+		return &ErrElementNotFound{}
+	}
+	return nil
 }
 
 // Matches checks if the element can be selected by the css selector
@@ -393,7 +408,7 @@ func (el *Element) SetFiles(paths []string) error {
 // is fired all NodeID on the page will be reassigned to another value)
 // we don't recommend using the NodeID, instead, use the BackendNodeID to identify the element.
 func (el *Element) Describe(depth int, pierce bool) (*proto.DOMNode, error) {
-	val, err := proto.DOMDescribeNode{ObjectID: el.id(), Depth: int(depth), Pierce: pierce}.Call(el)
+	val, err := proto.DOMDescribeNode{ObjectID: el.id(), Depth: depth, Pierce: pierce}.Call(el)
 	if err != nil {
 		return nil, err
 	}
@@ -570,7 +585,7 @@ func (el *Element) WaitInteractable() (pt *proto.Point, err error) {
 // Wait until the js returns true
 func (el *Element) Wait(opts *EvalOptions) error {
 	return utils.Retry(el.ctx, el.sleeper(), func() (bool, error) {
-		res, err := el.Evaluate(opts.This(el.Object))
+		res, err := el.Evaluate(opts.ByPromise().This(el.Object))
 		if err != nil {
 			return true, err
 		}

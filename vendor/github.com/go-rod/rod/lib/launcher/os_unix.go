@@ -5,6 +5,8 @@ package launcher
 import (
 	"os/exec"
 	"syscall"
+
+	"github.com/go-rod/rod/lib/launcher/flags"
 )
 
 func killGroup(pid int) {
@@ -12,8 +14,13 @@ func killGroup(pid int) {
 }
 
 func (l *Launcher) osSetupCmd(cmd *exec.Cmd) {
-	if _, has := l.Get(flagXVFB); has {
-		*cmd = *exec.Command("xvfb-run", cmd.Args...)
+	if flags, has := l.GetFlags(flags.XVFB); has {
+		var command []string
+		// flags must append before cmd.Args
+		command = append(command, flags...)
+		command = append(command, cmd.Args...)
+
+		*cmd = *exec.Command("xvfb-run", command...)
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }

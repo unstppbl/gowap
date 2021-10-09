@@ -13,50 +13,53 @@ import (
 	"strings"
 
 	"github.com/go-rod/rod/lib/defaults"
+	"github.com/go-rod/rod/lib/launcher/flags"
 	"github.com/go-rod/rod/lib/utils"
 	"github.com/ysmood/leakless"
 )
 
-const (
-	flagWorkingDir = "rod-working-dir"
-	flagEnv        = "rod-env"
-	flagXVFB       = "rod-xvfb"
-)
+// DefaultUserDataDirPrefix ...
+var DefaultUserDataDirPrefix = filepath.Join(os.TempDir(), "rod", "user-data")
 
 // Launcher is a helper to launch browser binary smartly
 type Launcher struct {
-	logger    io.Writer
+	Flags map[flags.Flag][]string `json:"flags"`
+
 	ctx       context.Context
 	ctxCancel func()
-	browser   *Browser
-	bin       string
-	url       string
-	parser    *URLParser
-	Flags     map[string][]string `json:"flags"`
-	pid       int
-	exit      chan struct{}
-	remote    bool // remote mode or not
-	leakless  bool
+
+	logger io.Writer
+
+	browser *Browser
+	parser  *URLParser
+	pid     int
+	exit    chan struct{}
+
+	managed    bool
+	serviceURL string
 }
 
 // New returns the default arguments to start browser.
 // Headless will be enabled by default.
 // Leakless will be enabled by default.
-// UserDataDir will use OS tmp dir by default.
+// UserDataDir will use OS tmp dir by default, this folder will usually be cleaned up by the OS after reboot.
 func New() *Launcher {
 	dir := defaults.Dir
 	if dir == "" {
-		dir = filepath.Join(os.TempDir(), "rod", "user-data", utils.RandString(8))
+		dir = filepath.Join(DefaultUserDataDirPrefix, utils.RandString(8))
 	}
 
-	defaultFlags := map[string][]string{
-		"user-data-dir": {dir},
+	defaultFlags := map[flags.Flag][]string{
+		flags.Bin:      {defaults.Bin},
+		flags.Leakless: nil,
+
+		flags.UserDataDir: {dir},
 
 		// use random port by default
-		"remote-debugging-port": {defaults.Port},
+		flags.RemoteDebuggingPort: {defaults.Port},
 
 		// enable headless by default
-		"headless": nil,
+		flags.Headless: nil,
 
 		// to disable the init blank window
 		"no-first-run":      nil,
@@ -90,16 +93,16 @@ func New() *Launcher {
 	}
 
 	if defaults.Show {
-		delete(defaultFlags, "headless")
+		delete(defaultFlags, flags.Headless)
 	}
 	if defaults.Devtools {
 		defaultFlags["auto-open-devtools-for-tabs"] = nil
 	}
 	if inContainer {
-		defaultFlags["no-sandbox"] = nil
+		defaultFlags[flags.NoSandbox] = nil
 	}
 	if defaults.Proxy != "" {
-		defaultFlags["proxy-server"] = []string{defaults.Proxy}
+		defaultFlags[flags.ProxyServer] = []string{defaults.Proxy}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -109,9 +112,7 @@ func New() *Launcher {
 		Flags:     defaultFlags,
 		exit:      make(chan struct{}),
 		browser:   NewBrowser(),
-		bin:       defaults.Bin,
 		parser:    NewURLParser(),
-		leakless:  true,
 		logger:    ioutil.Discard,
 	}
 }
@@ -126,54 +127,55 @@ func NewUserMode() *Launcher {
 	return &Launcher{
 		ctx:       ctx,
 		ctxCancel: cancel,
-		Flags: map[string][]string{
-			"remote-debugging-port": {"37712"},
-			"no-startup-window":     nil,
+		Flags: map[flags.Flag][]string{
+			flags.RemoteDebuggingPort: {"37712"},
+			"no-startup-window":       nil,
+			flags.Bin:                 {bin},
 		},
 		browser: NewBrowser(),
 		exit:    make(chan struct{}),
-		bin:     bin,
 		parser:  NewURLParser(),
 		logger:  ioutil.Discard,
 	}
 }
 
-// Context set the context
+// Context sets the context
 func (l *Launcher) Context(ctx context.Context) *Launcher {
 	ctx, cancel := context.WithCancel(ctx)
 	l.ctx = ctx
+	l.parser.Context(ctx)
 	l.ctxCancel = cancel
 	return l
 }
 
-// Get flag's first value
-func (l *Launcher) Get(name string) (string, bool) {
-	list, has := l.GetFlags(name)
-
-	if has {
-		if len(list) == 0 {
-			return "", true
-		}
-		return list[0], true
-	}
-	return "", false
-}
-
-// GetFlags from settings
-func (l *Launcher) GetFlags(name string) ([]string, bool) {
-	flag, has := l.Flags[l.normalizeFlag(name)]
-	return flag, has
-}
-
-// Set a command line argument to launch the browser. People also call it command line flag or switch.
-// List of available flags: https://peter.sh/experiments/chromium-command-line-switches/
-func (l *Launcher) Set(name string, values ...string) *Launcher {
+// Set a command line argument to launch the browser.
+func (l *Launcher) Set(name flags.Flag, values ...string) *Launcher {
 	l.Flags[l.normalizeFlag(name)] = values
 	return l
 }
 
+// Get flag's first value
+func (l *Launcher) Get(name flags.Flag) string {
+	if list, has := l.GetFlags(name); has {
+		return list[0]
+	}
+	return ""
+}
+
+// Has flag or not
+func (l *Launcher) Has(name flags.Flag) bool {
+	_, has := l.GetFlags(name)
+	return has
+}
+
+// GetFlags from settings
+func (l *Launcher) GetFlags(name flags.Flag) ([]string, bool) {
+	flag, has := l.Flags[l.normalizeFlag(name)]
+	return flag, has
+}
+
 // Append values to the flag
-func (l *Launcher) Append(name string, values ...string) *Launcher {
+func (l *Launcher) Append(name flags.Flag, values ...string) *Launcher {
 	flags, has := l.GetFlags(name)
 	if !has {
 		flags = []string{}
@@ -182,23 +184,22 @@ func (l *Launcher) Append(name string, values ...string) *Launcher {
 }
 
 // Delete a flag
-func (l *Launcher) Delete(name string) *Launcher {
+func (l *Launcher) Delete(name flags.Flag) *Launcher {
 	delete(l.Flags, l.normalizeFlag(name))
 	return l
 }
 
-// Bin set browser executable file path. If it's empty, launcher will automatically search or download the bin.
+// Bin set
 func (l *Launcher) Bin(path string) *Launcher {
-	l.bin = path
-	return l
+	return l.Set(flags.Bin, path)
 }
 
 // Headless switch. Whether to run browser in headless mode. A mode without visible UI.
 func (l *Launcher) Headless(enable bool) *Launcher {
 	if enable {
-		return l.Set("headless")
+		return l.Set(flags.Headless)
 	}
-	return l.Delete("headless")
+	return l.Delete(flags.Headless)
 }
 
 // NoSandbox switch. Whether to run browser in no-sandbox mode.
@@ -207,21 +208,23 @@ func (l *Launcher) Headless(enable bool) *Launcher {
 // Related doc: https://bugs.chromium.org/p/chromium/issues/detail?id=638180
 func (l *Launcher) NoSandbox(enable bool) *Launcher {
 	if enable {
-		return l.Set("no-sandbox")
+		return l.Set(flags.NoSandbox)
 	}
-	return l.Delete("no-sandbox")
+	return l.Delete(flags.NoSandbox)
 }
 
 // XVFB enables to run browser in by XVFB. Useful when you want to run headful mode on linux.
-func (l *Launcher) XVFB() *Launcher {
-	return l.Set(flagXVFB)
+func (l *Launcher) XVFB(args ...string) *Launcher {
+	return l.Set(flags.XVFB, args...)
 }
 
 // Leakless switch. If enabled, the browser will be force killed after the Go process exits.
 // The doc of leakless: https://github.com/ysmood/leakless.
 func (l *Launcher) Leakless(enable bool) *Launcher {
-	l.leakless = enable
-	return l
+	if enable {
+		return l.Set(flags.Leakless)
+	}
+	return l.Delete(flags.Leakless)
 }
 
 // Devtools switch to auto open devtools for each tab
@@ -237,9 +240,9 @@ func (l *Launcher) Devtools(autoOpenForTabs bool) *Launcher {
 // Related doc: https://chromium.googlesource.com/chromium/src/+/master/docs/user_data_dir.md
 func (l *Launcher) UserDataDir(dir string) *Launcher {
 	if dir == "" {
-		l.Delete("user-data-dir")
+		l.Delete(flags.UserDataDir)
 	} else {
-		l.Set("user-data-dir", dir)
+		l.Set(flags.UserDataDir, dir)
 	}
 	return l
 }
@@ -257,31 +260,27 @@ func (l *Launcher) ProfileDir(dir string) *Launcher {
 }
 
 // RemoteDebuggingPort to launch the browser. Zero for a random port. Zero is the default value.
-// If it's not zero, the launcher will try to connect to it before starting a new browser process.
-// For example, to reuse the same browser process for between 2 runs of a Go program, you can
-// do something like:
-//     launcher.New().RemoteDebuggingPort(9222).MustLaunch()
-//
-// Related doc: https://chromedevtools.github.io/devtools-protocol/
+// If it's not zero and the Launcher.Leakless is disabled, the launcher will try to reconnect to it first,
+// if the reconnection fails it will launch a new browser.
 func (l *Launcher) RemoteDebuggingPort(port int) *Launcher {
-	return l.Set("remote-debugging-port", fmt.Sprintf("%d", port))
+	return l.Set(flags.RemoteDebuggingPort, fmt.Sprintf("%d", port))
 }
 
 // Proxy switch. When disabled leakless will be disabled.
 func (l *Launcher) Proxy(host string) *Launcher {
-	return l.Set("proxy-server", host)
+	return l.Set(flags.ProxyServer, host)
 }
 
 // WorkingDir to launch the browser process.
 func (l *Launcher) WorkingDir(path string) *Launcher {
-	return l.Set(flagWorkingDir, path)
+	return l.Set(flags.WorkingDir, path)
 }
 
 // Env to launch the browser process. The default value is os.Environ().
 // Usually you use it to set the timezone env. Such as Env("TZ=America/New_York").
 // Timezone list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 func (l *Launcher) Env(env ...string) *Launcher {
-	return l.Set(flagEnv, env...)
+	return l.Set(flags.Env, env...)
 }
 
 // StartURL to launch
@@ -297,18 +296,18 @@ func (l *Launcher) FormatArgs() []string {
 			continue
 		}
 
-		if strings.HasPrefix(k, "rod-") {
+		if strings.HasPrefix(string(k), "rod-") {
 			continue
 		}
 
 		// fix a bug of chrome, if path is not absolute chrome will hang
-		if k == "user-data-dir" {
+		if k == flags.UserDataDir {
 			abs, err := filepath.Abs(v[0])
 			utils.E(err)
 			v[0] = abs
 		}
 
-		str := "--" + k
+		str := "--" + string(k)
 		if v != nil {
 			str += "=" + strings.Join(v, ",")
 		}
@@ -345,11 +344,11 @@ func (l *Launcher) Launch() (string, error) {
 	var ll *leakless.Launcher
 	var cmd *exec.Cmd
 
-	if l.leakless && leakless.Support() {
+	if l.Has(flags.Leakless) && leakless.Support() {
 		ll = leakless.New()
 		cmd = ll.Command(bin, l.FormatArgs()...)
 	} else {
-		port, _ := l.Get("remote-debugging-port")
+		port := l.Get(flags.RemoteDebuggingPort)
 		u, err := ResolveURL(port)
 		if err == nil {
 			return u, nil
@@ -390,8 +389,8 @@ func (l *Launcher) Launch() (string, error) {
 func (l *Launcher) setupCmd(cmd *exec.Cmd) {
 	l.osSetupCmd(cmd)
 
-	dir, _ := l.Get(flagWorkingDir)
-	env, _ := l.GetFlags(flagEnv)
+	dir := l.Get(flags.WorkingDir)
+	env, _ := l.GetFlags(flags.Env)
 	cmd.Dir = dir
 	cmd.Env = env
 
@@ -400,11 +399,12 @@ func (l *Launcher) setupCmd(cmd *exec.Cmd) {
 }
 
 func (l *Launcher) getBin() (string, error) {
-	if l.bin == "" {
+	bin := l.Get(flags.Bin)
+	if bin == "" {
 		l.browser.Context = l.ctx
 		return l.browser.Get()
 	}
-	return l.bin, nil
+	return bin, nil
 }
 
 func (l *Launcher) getURL() (u string, err error) {
@@ -413,8 +413,6 @@ func (l *Launcher) getURL() (u string, err error) {
 		err = l.ctx.Err()
 	case u = <-l.parser.URL:
 	case <-l.exit:
-		l.parser.Lock()
-		defer l.parser.Unlock()
 		err = l.parser.Err()
 	}
 	return
@@ -446,10 +444,10 @@ func (l *Launcher) Kill() {
 func (l *Launcher) Cleanup() {
 	<-l.exit
 
-	dir, _ := l.Get("user-data-dir")
+	dir := l.Get(flags.UserDataDir)
 	_ = os.RemoveAll(dir)
 }
 
-func (l *Launcher) normalizeFlag(name string) string {
-	return strings.TrimLeft(name, "-")
+func (l *Launcher) normalizeFlag(name flags.Flag) flags.Flag {
+	return flags.Flag(strings.TrimLeft(string(name), "-"))
 }

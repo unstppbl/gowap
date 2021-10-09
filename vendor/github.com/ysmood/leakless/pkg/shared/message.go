@@ -1,4 +1,4 @@
-package lib
+package shared
 
 // Message send between guard processes
 type Message struct {
