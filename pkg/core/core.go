@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	scraper "github.com/unstppbl/gowap/pkg/scraper"
 	log "github.com/sirupsen/logrus"
+	scraper "github.com/unstppbl/gowap/pkg/scraper"
 
 	jsoniter "github.com/json-iterator/go"
 	"go.zoe.im/surferua"
@@ -39,6 +39,7 @@ type Config struct {
 	MaxVisitedLinks        int
 	MsDelayBetweenRequests int
 	UserAgent              string
+	DevToolWsURL           string
 }
 
 // NewConfig struct with default values
@@ -54,6 +55,7 @@ func NewConfig() *Config {
 		MaxVisitedLinks:        10,
 		MsDelayBetweenRequests: 100,
 		UserAgent:              surferua.New().Desktop().Chrome().String(),
+		DevToolWsURL:           "",
 	}
 }
 
@@ -123,6 +125,7 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 			TimeoutSeconds:        config.TimeoutSeconds,
 			LoadingTimeoutSeconds: config.LoadingTimeoutSeconds,
 			UserAgent:             config.UserAgent,
+			DevToolWsURL:          config.DevToolWsURL,
 		}
 		err = wapp.Scraper.Init()
 	default:

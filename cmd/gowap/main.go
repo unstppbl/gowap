@@ -12,11 +12,13 @@ import (
 
 func main() {
 
-	var url, appsJSONPath, scraper, userAgent string
+	var url, appsJSONPath, scraper, userAgent, DevToolWsURL, outFile string
 	var help, pretty bool
 	var timeoutSeconds, loadingTimeoutSeconds, maxDepth, maxVisitedLinks, msDelayBetweenRequests int
 	flag.StringVar(&appsJSONPath, "file", "", "Path to override default technologies.json file")
 	flag.StringVar(&scraper, "scraper", "rod", "Choose scraper between rod (default) and colly")
+	flag.StringVar(&outFile, "o", "", "Json output file")
+	flag.StringVar(&DevToolWsURL, "devtools-ws-url", "", "DevTools WebSsocket URL")
 	flag.StringVar(&userAgent, "useragent", "", "Override the user-agent string")
 	flag.IntVar(&timeoutSeconds, "timeout", 3, "Timeout in seconds for fetching the url")
 	flag.IntVar(&loadingTimeoutSeconds, "loadtimeout", 3, "Timeout in seconds for loading the page")
@@ -61,6 +63,7 @@ func main() {
 	config.MaxVisitedLinks = maxVisitedLinks
 	config.MsDelayBetweenRequests = msDelayBetweenRequests
 	config.Scraper = scraper
+	config.DevToolWsURL = DevToolWsURL
 	if userAgent != "" {
 		config.UserAgent = userAgent
 	}
@@ -84,6 +87,16 @@ func main() {
 		fmt.Println(&prettyJSON)
 	} else {
 		fmt.Println(res)
-
+	}
+	if outFile != "" {
+		f, err := os.Create(outFile)
+		if err != nil {
+			panic(err)
+		}
+		result := fmt.Sprintf("%s", res)
+		_, e := f.WriteString(result)
+		if e != nil {
+			panic(e)
+		}
 	}
 }

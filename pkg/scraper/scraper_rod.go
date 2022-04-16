@@ -26,6 +26,7 @@ type RodScraper struct {
 	lock                  *sync.RWMutex
 	robotsMap             map[string]*robotstxt.RobotsData
 	depth                 int
+	DevToolWsURL          string
 }
 
 func (s *RodScraper) CanRenderPage() bool {
@@ -44,6 +45,7 @@ func (s *RodScraper) Init() error {
 		s.protoUserAgent = &proto.NetworkSetUserAgentOverride{UserAgent: s.UserAgent}
 		s.Browser = rod.
 			New().
+			ControlURL(s.DevToolWsURL).
 			MustConnect().
 			MustIgnoreCertErrors(true)
 	})
