@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
+	"github.com/go-rod/rod/lib/launcher"
 	"github.com/temoto/robotstxt"
 
 	log "github.com/sirupsen/logrus"
@@ -39,11 +40,14 @@ func (s *RodScraper) SetDepth(depth int) {
 func (s *RodScraper) Init() error {
 	log.Infoln("Rod initialization")
 	return rod.Try(func() {
+		path, _ := launcher.LookPath()
+		u := launcher.New().Bin(path).NoSandbox(true).MustLaunch()
 		s.lock = &sync.RWMutex{}
 		s.robotsMap = make(map[string]*robotstxt.RobotsData)
 		s.protoUserAgent = &proto.NetworkSetUserAgentOverride{UserAgent: s.UserAgent}
 		s.Browser = rod.
 			New().
+			ControlURL(u).
 			MustConnect().
 			MustIgnoreCertErrors(true)
 	})
