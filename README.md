@@ -4,17 +4,19 @@
 [![coverage](https://codecov.io/gh/unstppbl/gowap/branch/master/graph/badge.svg)](https://codecov.io/gh/unstppbl/gowap)
 [![report card](https://goreportcard.com/badge/github.com/unstppbl/gowap)](https://goreportcard.com/report/github.com/unstppbl/gowap)
 
-  - JS analysing (using [Rod](https://github.com/go-rod/rod))
-  - DNS scraping
-  - Confidence rate
-  - Recursive crawling
-  - [Rod](https://github.com/go-rod/rod) browser integration ([Colly](https://github.com/gocolly/colly) can still be used - faster but not loading JS)
-  - Can be used with as a cmd (technologies.json file embeded)
-  - Test coverage 100%
-  - robots.txt compliance
+- JS analysing (using [Rod](https://github.com/go-rod/rod))
+- DNS scraping
+- Confidence rate
+- Recursive crawling
+- [Rod](https://github.com/go-rod/rod) browser integration ([Colly](https://github.com/gocolly/colly) can still be used - faster but not loading JS)
+- Can be used with as a cmd (technologies.json file embeded)
+- Test coverage 100%
+- robots.txt compliance
 
 ## Usage
+
 ### Using the package
+
 `go get github.com/unstppbl/gowap`
 
 Call `Init()` function with a `Config` object created with the `NewConfig()` function. It will return `Wappalyzer` object on which you can call Analyze method with URL string as argument.
@@ -40,19 +42,24 @@ Call `Init()` function with a `Config` object created with the `NewConfig()` fun
 	config.UserAgent = "GoWap"
     //Output as a JSON string
     config.JSON = true
+    //Omit all output logs
+    config.Silently = true
 
     //Initialisation
 	wapp, err := gowap.Init(config)
-    //Scraping 
+    //Scraping
     url := "https://scrapethissite.com/"
 	res, err := wapp.Analyze(url)
 
 ```
+
 ### Using the cmd
+
 You can build the cmd using the commande :
 `go build -o gowap cmd/gowap/main.go`
 
 Then using the compiled binary :
+
 ```
 You must specify a url to analyse
 Usage : gowap [options] <url>
@@ -78,13 +85,15 @@ Usage : gowap [options] <url>
 ```
 
 ## To Do
-List of some ideas  :
+
+List of some ideas :
+
 - [ ] analyse robots (field certIssuer)
-- [X] analyse certificates (field certIssuer)
+- [x] analyse certificates (field certIssuer)
 - [ ] anayse css (field css)
 - [ ] anayse xhr requests (field xhr)
 - [ ] scrape an url list from a file in args
 - [ ] ability to choose what is scraped (DNS, cookies, HTML, scripts, etc...)
 - [ ] more tests in "real life"
 - [ ] perf ? regex html seems long
-- [X] should output be the same as original wappalizer ? + ordering
+- [x] should output be the same as original wappalizer ? + ordering

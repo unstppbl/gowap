@@ -39,6 +39,7 @@ type Config struct {
 	MaxVisitedLinks        int
 	MsDelayBetweenRequests int
 	UserAgent              string
+	Silently               bool
 }
 
 // NewConfig struct with default values
@@ -54,6 +55,7 @@ func NewConfig() *Config {
 		MaxVisitedLinks:        10,
 		MsDelayBetweenRequests: 100,
 		UserAgent:              surferua.New().Desktop().Chrome().String(),
+		Silently:               false,
 	}
 }
 
@@ -116,6 +118,7 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 			TimeoutSeconds:        config.TimeoutSeconds,
 			LoadingTimeoutSeconds: config.LoadingTimeoutSeconds,
 			UserAgent:             config.UserAgent,
+			Silently:              config.Silently,
 		}
 		err = wapp.Scraper.Init()
 	case "rod":
@@ -123,33 +126,51 @@ func Init(config *Config) (wapp *Wappalyzer, err error) {
 			TimeoutSeconds:        config.TimeoutSeconds,
 			LoadingTimeoutSeconds: config.LoadingTimeoutSeconds,
 			UserAgent:             config.UserAgent,
+			Silently:              config.Silently,
 		}
 		err = wapp.Scraper.Init()
 	default:
-		log.Errorf("Unknown scraper %s", config.Scraper)
+		if !config.Silently {
+			log.Errorf("Unknown scraper %s", config.Scraper)
+		}
 		err = errors.New("UnknownScraper")
 	}
 
 	if err != nil {
-		log.Errorf("Scraper %s initialization failed : %v", config.Scraper, err)
+		if !config.Silently {
+			log.Errorf("Scraper %s initialization failed : %v", config.Scraper, err)
+		}
 		return nil, err
 	}
 
 	var appsFile []byte
 	if config.AppsJSONPath != "" {
-		log.Infof("Trying to open technologies file at %s", config.AppsJSONPath)
+		if !config.Silently {
+			log.Infof("Trying to open technologies file at %s", config.AppsJSONPath)
+		}
+
 		appsFile, err = ioutil.ReadFile(config.AppsJSONPath)
 		if err != nil {
-			log.Warningf("Couldn't open file at %s\n", config.AppsJSONPath)
+			if !config.Silently {
+				log.Warningf("Couldn't open file at %s\n", config.AppsJSONPath)
+			}
 		} else {
-			log.Infof("Technologies file opened")
+			if !config.Silently {
+				log.Infof("Technologies file opened")
+			}
 		}
 	}
 	if config.AppsJSONPath == "" || len(appsFile) == 0 {
-		log.Infof("Loading included asset %s", embedPath)
+		if !config.Silently {
+			log.Infof("Loading included asset %s", embedPath)
+		}
+
 		appsFile, err = f.ReadFile(embedPath)
 		if err != nil {
-			log.Errorf("Couldn't open included asset %s\n", embedPath)
+			if !config.Silently {
+				log.Errorf("Couldn't open included asset %s\n", embedPath)
+			}
+
 			return nil, err
 		}
 	}
@@ -162,7 +183,9 @@ func parseTechnologiesFile(appsFile *[]byte, wapp *Wappalyzer) error {
 	temporary := &temp{}
 	err := json.Unmarshal(*appsFile, &temporary)
 	if err != nil {
-		log.Errorf("Couldn't unmarshal apps.json file: %s\n", err)
+		if !wapp.Config.Silently {
+			log.Errorf("Couldn't unmarshal apps.json file: %s\n", err)
+		}
 		return err
 	}
 	wapp.Apps = make(map[string]*application)
@@ -170,7 +193,9 @@ func parseTechnologiesFile(appsFile *[]byte, wapp *Wappalyzer) error {
 	for k, v := range temporary.Categories {
 		catg := &category{}
 		if err = json.Unmarshal(*v, catg); err != nil {
-			log.Errorf("[!] Couldn't unmarshal Categories: %s\n", err)
+			if !wapp.Config.Silently {
+				log.Errorf("[!] Couldn't unmarshal Categories: %s\n", err)
+			}
 			return err
 		}
 		catID, err := strconv.Atoi(k)
@@ -183,14 +208,18 @@ func parseTechnologiesFile(appsFile *[]byte, wapp *Wappalyzer) error {
 		}
 	}
 	if len(wapp.Categories) < 1 {
-		log.Errorf("Couldn't find categories in technologies file")
+		if !wapp.Config.Silently {
+			log.Errorf("Couldn't find categories in technologies file")
+		}
 		return errors.New("NoCategoryFound")
 	}
 	for k, v := range temporary.Apps {
 		app := &application{}
 		app.Name = k
 		if err = json.Unmarshal(*v, app); err != nil {
-			log.Errorf("Couldn't unmarshal Apps: %s\n", err)
+			if !wapp.Config.Silently {
+				log.Errorf("Couldn't unmarshal Apps: %s\n", err)
+			}
 			return err
 		}
 		parseCategories(app, &wapp.Categories)
@@ -198,7 +227,9 @@ func parseTechnologiesFile(appsFile *[]byte, wapp *Wappalyzer) error {
 		wapp.Apps[k] = app
 	}
 	if len(wapp.Apps) < 1 {
-		log.Errorf("Couldn't find technologies in technologies file")
+		if !wapp.Config.Silently {
+			log.Errorf("Couldn't find technologies in technologies file")
+		}
 		return errors.New("NoTechnologyFound")
 	}
 	return err
@@ -240,7 +271,10 @@ func (wapp *Wappalyzer) Analyze(paramURL string) (result interface{}, err error)
 	paramURL = strings.TrimRight(paramURL, "/")
 	toVisitURLs[paramURL] = struct{}{}
 	for depth := 0; depth <= wapp.Config.MaxDepth; depth++ {
-		log.Printf("Depth : %d", depth)
+		if !wapp.Config.Silently {
+			log.Printf("Depth : %d", depth)
+		}
+
 		wapp.Scraper.SetDepth(depth)
 		links, visitedURLs, retErr := analyzePages(toVisitURLs, wapp, detectedApplications)
 		//If we have at least one page ok => no error
@@ -299,7 +333,9 @@ func analyzePages(paramURLs map[string]struct{}, wapp *Wappalyzer, detectedAppli
 		}
 		wapp.Config.visitedLinks = wapp.Config.visitedLinks + 1
 		if wapp.Config.visitedLinks >= wapp.Config.MaxVisitedLinks {
-			log.Printf("Visited max number of pages : %d", wapp.Config.MaxVisitedLinks)
+			if !wapp.Config.Silently {
+				log.Printf("Visited max number of pages : %d", wapp.Config.MaxVisitedLinks)
+			}
 			break
 		}
 		time.Sleep(time.Duration(wapp.Config.MsDelayBetweenRequests) * time.Millisecond)
@@ -309,15 +345,21 @@ func analyzePages(paramURLs map[string]struct{}, wapp *Wappalyzer, detectedAppli
 
 // Analyze retrieves application stack used on the provided web-site
 func analyzePage(paramURL string, wapp *Wappalyzer, detectedApplications *detected) (links *map[string]struct{}, scrapedURL *scraper.ScrapedURL, err error) {
-	log.Printf("Analyzing %s", paramURL)
+	if !wapp.Config.Silently {
+		log.Printf("Analyzing %s", paramURL)
+	}
 	if !validateURL(paramURL) {
-		log.Errorf("URL not valid : %s", paramURL)
+		if !wapp.Config.Silently {
+			log.Errorf("URL not valid : %s", paramURL)
+		}
 		return nil, &scraper.ScrapedURL{URL: paramURL, Status: 400}, errors.New("UrlNotValid")
 	}
 
 	scraped, err := wapp.Scraper.Scrape(paramURL)
 	if err != nil {
-		log.Errorf("Scraper failed : %v", err)
+		if !wapp.Config.Silently {
+			log.Errorf("Scraper failed : %v", err)
+		}
 		return nil, &scraper.ScrapedURL{URL: paramURL, Status: 400}, err
 	}
 
@@ -335,54 +377,54 @@ func analyzePage(paramURL string, wapp *Wappalyzer, detectedApplications *detect
 
 	for _, app := range wapp.Apps {
 		wg.Add(1)
-		go func(app *application) {
+		go func(app *application, cfg *Config) {
 			defer wg.Done()
-			analyzeURL(app, paramURL, detectedApplications)
+			analyzeURL(app, paramURL, detectedApplications, cfg)
 			if canRenderPage && app.Js != nil {
-				analyzeJS(app, wapp.Scraper, detectedApplications)
+				analyzeJS(app, wapp.Scraper, detectedApplications, cfg)
 			}
 			if canRenderPage && app.Dom != nil {
-				analyzeDom(app, doc, detectedApplications)
+				analyzeDom(app, doc, detectedApplications, cfg)
 			}
 			if app.HTML != nil {
-				analyzeHTML(app, scraped.HTML, detectedApplications)
+				analyzeHTML(app, scraped.HTML, detectedApplications, cfg)
 			}
 			if len(scraped.Headers) > 0 && app.Headers != nil {
-				analyzeHeaders(app, scraped.Headers, detectedApplications)
+				analyzeHeaders(app, scraped.Headers, detectedApplications, cfg)
 			}
 			if len(scraped.Cookies) > 0 && app.Cookies != nil {
-				analyzeCookies(app, scraped.Cookies, detectedApplications)
+				analyzeCookies(app, scraped.Cookies, detectedApplications, cfg)
 			}
 			if len(scraped.Scripts) > 0 && app.Scripts != nil {
-				analyzeScripts(app, scraped.Scripts, detectedApplications)
+				analyzeScripts(app, scraped.Scripts, detectedApplications, cfg)
 			}
 			if len(scraped.Meta) > 0 && app.Meta != nil {
-				analyzeMeta(app, scraped.Meta, detectedApplications)
+				analyzeMeta(app, scraped.Meta, detectedApplications, cfg)
 			}
 			if len(scraped.DNS) > 0 && app.DNS != nil {
-				analyzeDNS(app, scraped.DNS, detectedApplications)
+				analyzeDNS(app, scraped.DNS, detectedApplications, cfg)
 			}
 			if len(scraped.CertIssuer) > 0 && app.CertIssuer != "" {
 				analyzeCertIssuer(app, scraped.CertIssuer, detectedApplications)
 			}
-		}(app)
+		}(app, wapp.Config)
 	}
 
 	wg.Wait()
 
 	for _, app := range detectedApplications.Apps {
 		if app.excludes != nil {
-			resolveExcludes(&detectedApplications.Apps, app.excludes)
+			resolveExcludes(&detectedApplications.Apps, app.excludes, wapp.Config)
 		}
 		if app.implies != nil {
-			resolveImplies(&wapp.Apps, &detectedApplications.Apps, app.implies)
+			resolveImplies(&wapp.Apps, &detectedApplications.Apps, app.implies, wapp.Config)
 		}
 	}
 	return links, &scraped.URLs, nil
 }
 
-func analyzeURL(app *application, paramURL string, detectedApplications *detected) {
-	patterns := parsePatterns(app.URL)
+func analyzeURL(app *application, paramURL string, detectedApplications *detected, cfg *Config) {
+	patterns := parsePatterns(app.URL, cfg)
 	for _, v := range patterns {
 		for _, pattrn := range v {
 			if pattrn.regex != nil && pattrn.regex.MatchString(paramURL) {
@@ -393,8 +435,8 @@ func analyzeURL(app *application, paramURL string, detectedApplications *detecte
 	}
 }
 
-func analyzeScripts(app *application, scripts []string, detectedApplications *detected) {
-	patterns := parsePatterns(app.Scripts)
+func analyzeScripts(app *application, scripts []string, detectedApplications *detected, cfg *Config) {
+	patterns := parsePatterns(app.Scripts, cfg)
 	for _, v := range patterns {
 		for _, pattrn := range v {
 			if pattrn.regex != nil {
@@ -409,8 +451,8 @@ func analyzeScripts(app *application, scripts []string, detectedApplications *de
 	}
 }
 
-func analyzeHeaders(app *application, headers map[string][]string, detectedApplications *detected) {
-	patterns := parsePatterns(app.Headers)
+func analyzeHeaders(app *application, headers map[string][]string, detectedApplications *detected, cfg *Config) {
+	patterns := parsePatterns(app.Headers, cfg)
 	for headerName, v := range patterns {
 		headerNameLowerCase := strings.ToLower(headerName)
 		for _, pattrn := range v {
@@ -426,8 +468,8 @@ func analyzeHeaders(app *application, headers map[string][]string, detectedAppli
 	}
 }
 
-func analyzeCookies(app *application, cookies map[string]string, detectedApplications *detected) {
-	patterns := parsePatterns(app.Cookies)
+func analyzeCookies(app *application, cookies map[string]string, detectedApplications *detected, cfg *Config) {
+	patterns := parsePatterns(app.Cookies, cfg)
 	for cookieName, v := range patterns {
 		cookieNameLowerCase := strings.ToLower(cookieName)
 		for _, pattrn := range v {
@@ -441,8 +483,8 @@ func analyzeCookies(app *application, cookies map[string]string, detectedApplica
 	}
 }
 
-func analyzeHTML(app *application, html string, detectedApplications *detected) {
-	patterns := parsePatterns(app.HTML)
+func analyzeHTML(app *application, html string, detectedApplications *detected, cfg *Config) {
+	patterns := parsePatterns(app.HTML, cfg)
 	for _, v := range patterns {
 		for _, pattrn := range v {
 			if pattrn.regex != nil && pattrn.regex.MatchString(html) {
@@ -454,8 +496,8 @@ func analyzeHTML(app *application, html string, detectedApplications *detected) 
 	}
 }
 
-func analyzeMeta(app *application, metas map[string][]string, detectedApplications *detected) {
-	patterns := parsePatterns(app.Meta)
+func analyzeMeta(app *application, metas map[string][]string, detectedApplications *detected, cfg *Config) {
+	patterns := parsePatterns(app.Meta, cfg)
 	for metaName, v := range patterns {
 		metaNameLowerCase := strings.ToLower(metaName)
 		for _, pattrn := range v {
@@ -472,8 +514,8 @@ func analyzeMeta(app *application, metas map[string][]string, detectedApplicatio
 }
 
 // analyzeJS evals the JS properties and tries to match
-func analyzeJS(app *application, scraper scraper.Scraper, detectedApplications *detected) {
-	patterns := parsePatterns(app.Js)
+func analyzeJS(app *application, scraper scraper.Scraper, detectedApplications *detected, cfg *Config) {
+	patterns := parsePatterns(app.Js, cfg)
 	for jsProp, v := range patterns {
 		value, err := scraper.EvalJS(jsProp)
 		if err == nil && value != nil {
@@ -488,7 +530,7 @@ func analyzeJS(app *application, scraper scraper.Scraper, detectedApplications *
 }
 
 // analyzeDom evals the DOM tries to match
-func analyzeDom(app *application, doc *goquery.Document, detectedApplications *detected) {
+func analyzeDom(app *application, doc *goquery.Document, detectedApplications *detected, cfg *Config) {
 	//Parsing Dom selector from json (string or map)
 	domParsed := make(map[string]map[string]interface{})
 	switch doms := app.Dom.(type) {
@@ -503,13 +545,15 @@ func analyzeDom(app *application, doc *goquery.Document, detectedApplications *d
 			domParsed[domSelector.(string)] = map[string]interface{}{"exists": ""}
 		}
 	default:
-		log.Errorf("Unknown type in analyzeDom: %T\n", doms)
+		if !cfg.Silently {
+			log.Errorf("Unknown type in analyzeDom: %T\n", doms)
+		}
 	}
 
 	for domSelector, v1 := range domParsed {
 		doc.Find(domSelector).First().Each(func(i int, s *goquery.Selection) {
 			for domType, v := range v1 {
-				patterns := parsePatterns(v)
+				patterns := parsePatterns(v, cfg)
 				for attribute, pattrns := range patterns {
 					for _, pattrn := range pattrns {
 						var value string
@@ -535,8 +579,8 @@ func analyzeDom(app *application, doc *goquery.Document, detectedApplications *d
 }
 
 // analyzeDNS tries to match dns records
-func analyzeDNS(app *application, dns map[string][]string, detectedApplications *detected) {
-	patterns := parsePatterns(app.DNS)
+func analyzeDNS(app *application, dns map[string][]string, detectedApplications *detected, cfg *Config) {
+	patterns := parsePatterns(app.DNS, cfg)
 	for dnsType, v := range patterns {
 		dnsTypeUpperCase := strings.ToUpper(dnsType)
 		for _, pattrn := range v {
@@ -623,7 +667,7 @@ type pattern struct {
 	confidence int
 }
 
-func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
+func parsePatterns(patterns interface{}, cfg *Config) (result map[string][]*pattern) {
 	parsed := make(map[string][]string)
 	switch ptrn := patterns.(type) {
 	case string:
@@ -638,7 +682,9 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 					parsed[k] = append(parsed[k], v1.(string))
 				}
 			default:
-				log.Errorf("Unknown type in parsePatterns: %T\n", v)
+				if !cfg.Silently {
+					log.Errorf("Unknown type in parsePatterns: %T\n", v)
+				}
 			}
 		}
 	case []interface{}:
@@ -648,7 +694,9 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 		}
 		parsed["main"] = slice
 	default:
-		log.Errorf("Unknown type in parsePatterns: %T\n", ptrn)
+		if !cfg.Silently {
+			log.Errorf("Unknown type in parsePatterns: %T\n", ptrn)
+		}
 	}
 	result = make(map[string][]*pattern)
 	for k, v := range parsed {
@@ -684,8 +732,8 @@ func parsePatterns(patterns interface{}) (result map[string][]*pattern) {
 	return result
 }
 
-func resolveExcludes(detected *map[string]*resultApp, value interface{}) {
-	patterns := parsePatterns(value)
+func resolveExcludes(detected *map[string]*resultApp, value interface{}, cfg *Config) {
+	patterns := parsePatterns(value, cfg)
 	for _, v := range patterns {
 		for _, excluded := range v {
 			delete(*detected, excluded.str)
@@ -693,8 +741,8 @@ func resolveExcludes(detected *map[string]*resultApp, value interface{}) {
 	}
 }
 
-func resolveImplies(apps *map[string]*application, detected *map[string]*resultApp, value interface{}) {
-	patterns := parsePatterns(value)
+func resolveImplies(apps *map[string]*application, detected *map[string]*resultApp, value interface{}, cfg *Config) {
+	patterns := parsePatterns(value, cfg)
 	for _, v := range patterns {
 		for _, implied := range v {
 			app, ok := (*apps)[implied.str]
@@ -702,7 +750,7 @@ func resolveImplies(apps *map[string]*application, detected *map[string]*resultA
 				resApp := &resultApp{technology{app.Slug, app.Name, implied.confidence, implied.version, app.Icon, app.Website, app.CPE, app.Categories}, app.Excludes, app.Implies}
 				(*detected)[implied.str] = resApp
 				if app.Implies != nil {
-					resolveImplies(apps, detected, app.Implies)
+					resolveImplies(apps, detected, app.Implies, cfg)
 				}
 			}
 		}

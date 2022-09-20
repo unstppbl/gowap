@@ -22,6 +22,7 @@ type CollyScraper struct {
 	LoadingTimeoutSeconds int
 	UserAgent             string
 	depth                 int
+	Silently              bool
 }
 
 func (s *CollyScraper) CanRenderPage() bool {
@@ -33,7 +34,10 @@ func (s *CollyScraper) SetDepth(depth int) {
 }
 
 func (s *CollyScraper) Init() error {
-	log.Infoln("Colly initialization")
+	if !s.Silently {
+		log.Infoln("Colly initialization")
+	}
+
 	s.Transport = &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout: time.Second * time.Duration(s.TimeoutSeconds),

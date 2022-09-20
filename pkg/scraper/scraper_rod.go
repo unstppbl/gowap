@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/proto"
 	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/temoto/robotstxt"
 
 	log "github.com/sirupsen/logrus"
@@ -27,6 +27,7 @@ type RodScraper struct {
 	lock                  *sync.RWMutex
 	robotsMap             map[string]*robotstxt.RobotsData
 	depth                 int
+	Silently              bool
 }
 
 func (s *RodScraper) CanRenderPage() bool {
@@ -38,7 +39,10 @@ func (s *RodScraper) SetDepth(depth int) {
 }
 
 func (s *RodScraper) Init() error {
-	log.Infoln("Rod initialization")
+	if !s.Silently {
+		log.Infoln("Rod initialization")
+	}
+
 	return rod.Try(func() {
 		path, _ := launcher.LookPath()
 		u := launcher.New().Bin(path).NoSandbox(true).MustLaunch()
@@ -79,7 +83,9 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 			MustNavigate(paramURL)
 	})
 	if errRod != nil {
-		log.Errorf("Error while visiting %s : %s", paramURL, errRod.Error())
+		if !s.Silently {
+			log.Errorf("Error while visiting %s : %s", paramURL, errRod.Error())
+		}
 		return scraped, errRod
 	}
 
@@ -103,7 +109,9 @@ func (s *RodScraper) Scrape(paramURL string) (*ScrapedData, error) {
 			MustWaitLoad()
 	})
 	if errRod != nil {
-		log.Errorf("Error while loading %s : %s", paramURL, errRod.Error())
+		if !s.Silently {
+			log.Errorf("Error while loading %s : %s", paramURL, errRod.Error())
+		}
 		return scraped, errRod
 	}
 
