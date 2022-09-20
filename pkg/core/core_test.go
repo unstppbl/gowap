@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/PuerkitoBio/goquery"
@@ -363,4 +364,51 @@ func MockHTTP(content string) *httptest.Server {
 				fmt.Fprintln(w, content)
 			}))
 	return ts
+}
+
+func Test_getLinksSlice(t *testing.T) {
+	type args struct {
+		doc        *goquery.Document
+		currentURL string
+	}
+	tests := []struct {
+		name string
+		args args
+		want *map[string]struct{}
+	}{
+		{
+			name: "link with path",
+			args: args{
+				currentURL: "https://www.qwerty.com/index.php",
+				doc: func() *goquery.Document {
+					doc, _ := goquery.NewDocumentFromReader(
+						strings.NewReader(`<html><body><a href="https://www.qwerty.com/index.php" /></body></html>`),
+					)
+					return doc
+				}(),
+			},
+			want: &map[string]struct{}{"https://www.qwerty.com/index.php": {}},
+		},
+		{
+			name: "link unencoded",
+			args: args{
+				currentURL: "https://www.qwerty.com/index.php",
+				doc: func() *goquery.Document {
+					doc, _ := goquery.NewDocumentFromReader(
+						strings.NewReader(`<html><body><a href="https://www.qwerty.com/index.php?x=1
+						&amp;y=2" /></body></html>`),
+					)
+					return doc
+				}(),
+			},
+			want: &map[string]struct{}{"https://www.qwerty.com/index.php": {}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getLinksSlice(tt.args.doc, tt.args.currentURL); !assert.EqualValues(t, tt.want, got) {
+				t.Errorf("getLinksSlice() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
