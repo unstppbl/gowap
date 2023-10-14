@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	scraper "github.com/unstppbl/gowap/pkg/scraper"
 	log "github.com/sirupsen/logrus"
+	scraper "github.com/unstppbl/gowap/pkg/scraper"
 
 	jsoniter "github.com/json-iterator/go"
 	"go.zoe.im/surferua"
@@ -732,12 +732,13 @@ func getLinksSlice(doc *goquery.Document, currentURL string) *map[string]struct{
 
 	doc.Find("body a").Each(func(index int, item *goquery.Selection) {
 		rawLink, _ := item.Attr("href")
-		parsedLink, _ := url.Parse(rawLink)
+		escaped := strings.ReplaceAll(strings.ReplaceAll(rawLink, "\t", ""), "\n", "")
+		parsedLink, _ := url.Parse(escaped)
 		if parsedLink.Scheme == "" {
 			parsedLink.Scheme = parsedCurrentURL.Scheme
 		}
 		if matched := protocolRegex.MatchString(parsedLink.Scheme); matched && (parsedLink.Host == "" || parsedLink.Host == parsedCurrentURL.Host) {
-			ret[parsedLink.Scheme+"://"+parsedCurrentURL.Host+"/"+strings.TrimRight(parsedLink.Path, "/")] = struct{}{}
+			ret[parsedLink.Scheme+"://"+parsedCurrentURL.Host+"/"+strings.TrimPrefix(strings.TrimRight(parsedLink.Path, "/"), "/")] = struct{}{}
 		}
 	})
 	return &ret
